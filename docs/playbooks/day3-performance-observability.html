@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gün 3 — Performans &amp; Observability: Span&lt;T&gt;, OpenTelemetry, Redis, Sentry | Eğitmen Playbook</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --text: #e7ecf3;
+      --muted: #9aa8bc;
+      --accent: #3d8bfd;
+      --accent2: #6ee7b7;
+      --warn: #fbbf24;
+      --danger: #f87171;
+      --border: #334155;
+      --font: "Segoe UI", "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+    header {
+      background: linear-gradient(135deg, #3b1d5e 0%, #0f1419 60%);
+      border-bottom: 1px solid var(--border);
+      padding: 2rem 2.5rem;
+    }
+    header h1 { margin: 0 0 0.35rem; font-size: 1.75rem; font-weight: 600; }
+    header p { margin: 0; color: var(--muted); max-width: 52rem; }
+    main { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 1.5rem;
+    }
+    h2 {
+      font-size: 1.25rem;
+      margin: 0 0 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    h3 { font-size: 1.05rem; color: var(--accent2); margin-top: 1.25rem; }
+    p, li { color: var(--text); }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin: 1rem 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.65rem 0.75rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--surface2); color: var(--accent2); font-weight: 600; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    .tag {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      background: var(--surface2);
+      color: var(--warn);
+      border: 1px solid var(--border);
+    }
+    pre, code {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+    }
+    pre {
+      background: #0a0e14;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.15rem;
+      overflow-x: auto;
+      line-height: 1.45;
+    }
+    code { color: #a5d6ff; }
+    .war {
+      border-left: 4px solid var(--danger);
+      padding-left: 1rem;
+      margin: 1rem 0;
+    }
+    .gotcha {
+      background: rgba(251, 191, 36, 0.08);
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      border-radius: 8px;
+      padding: 1rem 1.15rem;
+      margin: 0.75rem 0;
+    }
+    .gotcha strong { color: var(--warn); }
+    ol.lab { counter-reset: lab; list-style: none; padding: 0; }
+    ol.lab li {
+      counter-increment: lab;
+      margin-bottom: 1.25rem;
+      padding-left: 2.5rem;
+      position: relative;
+    }
+    ol.lab li::before {
+      content: counter(lab);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1.75rem;
+      height: 1.75rem;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 50%;
+      font-size: 0.8rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .mermaid { background: var(--surface2); border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+    .phase-badge {
+      display: inline-block;
+      padding: 0.2rem 0.65rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-right: 0.5rem;
+    }
+    .phase-morning { background: #1e3a5f; color: #93c5fd; }
+    .phase-afternoon { background: #3b1f2b; color: #fca5a5; }
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 2rem;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="tag">Evolutionary Logistics &amp; Telemetry Platform · Gün 3 / 8 saat</p>
+    <h1>Performans &amp; Observability: Span&lt;T&gt;, OTEL, Redis &amp; Sentry</h1>
+    <p>Gün 2'de kurduğumuz pipeline'ı <strong>ölçülebilir</strong> hale getiriyoruz. Zero-allocation hot-path (Span&lt;T&gt;, Pipeline&lt;T&gt;, ArrayPool), GC modu seçimi, OpenTelemetry trace/metric/log üçlüsü, Redis L1/L2 stampede savunması ve Sentry/Graylog ile production debugging. <strong>Odak:</strong> p99 latency, GC pause, metric cardinality ve "neden yavaş?" sorusunun kanıtla cevaplanması.</p>
+  </header>
+
+  <main>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         GÜNÜN HEDEFLERİ
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>🧭 Günün hedefleri</h2>
+      <ul>
+        <li>Telemetry consumer hot-path'ini <code>Span&lt;T&gt;</code> / <code>ReadOnlySequence&lt;T&gt;</code> ile GC baskısı sıfıra indirilmiş hale getirmek.</li>
+        <li>GC modu (Server vs Workstation, Concurrent, DATAS) kararını <strong>ölçümle</strong> vermek; LOH/POH davranışını görmek.</li>
+        <li>OpenTelemetry: <code>ActivitySource</code> + <code>Meter</code> + <code>Serilog</code> ile trace/metric/log korelasyonu (trace_id → Graylog).</li>
+        <li>Sampling stratejisi (head vs tail) ve <strong>metric cardinality</strong> bombasını önlemek.</li>
+        <li>Redis Cache-Aside'te stampede + L1/L2 tutarlılığını <code>IDistributedLock</code> ve Pub/Sub ile savunmak.</li>
+        <li>Sentry (exception + release + breadcrumb) ve Graylog (GELF structured log) ile prod debugging akışı kurmak.</li>
+      </ul>
+
+      <div class="mermaid">
+flowchart TB
+  subgraph Apps["Servisler (:8080-8083)"]
+    GW[Gateway]
+    ORD[Order]
+    INV[Inventory]
+    TEL[Telemetry Processor]
+  end
+
+  subgraph SDK["OTel .NET SDK"]
+    AS[ActivitySource<br/>traces]
+    MTR[Meter<br/>metrics]
+  end
+
+  OTC[OTel Collector<br/>:4317 OTLP]
+  JAEGER[(Jaeger<br/>traces)]
+  PROM[(Prometheus<br/>metrics)]
+  LOKI[(Graylog / GELF<br/>logs)]
+  SENTRY[Sentry Relay<br/>exceptions]
+
+  GRAF[Grafana<br/>:3001]
+  REDIS[(Redis 8.10<br/>L2 cache + Pub/Sub)]
+
+  GW --> AS
+  ORD --> AS
+  INV --> AS
+  TEL --> AS
+  AS --> OTC
+  MTR --> OTC
+  OTC --> JAEGER
+  OTC --> PROM
+  OTC --> LOKI
+  PROM --> GRAF
+  JAEGER --> GRAF
+  INV --> REDIS
+  ORD -.exception.-> SENTRY
+      </div>
+      <p class="muted">Anahtar: <strong>tek bir trace_id</strong> hem Jaeger trace'inde, hem Graylog log satırında, hem Sentry event'inde görünmeli. Aksi halde "prod'da ne oldu?" sorusu cevaplanamaz.</p>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         MİMARİ KARAR & TRADE-OFF TABLOSU
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>🧠 Mimari karar &amp; trade-off tablosu</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Karar</th>
+            <th>Seçilen</th>
+            <th>Alternatif</th>
+            <th>Neden?</th>
+            <th>Bedel (trade-off)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Hot-path parse</td>
+            <td><code>Utf8JsonReader</code> + <code>ReadOnlySpan&lt;byte&gt;</code></td>
+            <td><code>JsonSerializer.Deserialize&lt;T&gt;(string)</code></td>
+            <td>String allocation yok; saniyede on binlerce mesajda Gen0 = 0; p99 sabit</td>
+            <td>Ref-struct kısıtları (async/field'a konamaz); elle reader state yönetimi; kod okunabilirliği düşer</td>
+          </tr>
+          <tr>
+            <td>Buffer yönetimi</td>
+            <td><code>ArrayPool&lt;byte&gt;.Shared</code> + <code>finally</code> iade</td>
+            <td><code>new byte[]</code> per message</td>
+            <td>LOH allocation sıfırlanır; GC frekansı düşer</td>
+            <td>Pool exhaustion riski; return unutulursa sessiz sızıntı; thread-safety disiplini</td>
+          </tr>
+          <tr>
+            <td>GC modu</td>
+            <td>Server GC + Concurrent (throughput servisleri)</td>
+            <td>Workstation GC</td>
+            <td>Çok çekirdekte paralel gen0/gen1; heap segmentleri/socket ayrı → daha yüksek throughput</td>
+            <td>Memory footprint artar (segment/CPU başına); latency-sensitive tek-thread serviste ters etki</td>
+          </tr>
+          <tr>
+            <td>Trace export</td>
+            <td>OTLP → OTel Collector → Jaeger</td>
+            <td>SDK'dan doğrudan Jaeger agent</td>
+            <td>Collector = tek egress noktası; sampling/redaction/routing merkezi; servis restart'ında trace kaybı yok</td>
+            <td>Ek hop + operasyonel bileşen; collector down = trace buffer (batch exporter) birikir</td>
+          </tr>
+          <tr>
+            <td>Sampling</td>
+            <td>Head sampling (ParentBased) + <code>TraceIdRatioBased</code></td>
+            <td>Tail sampling (collector)</td>
+            <td>SDK maliyeti düşük; her serviste tutarlı karar (parent-based)</td>
+            <td>Hatalı trace'ler %100 yakalanamaz — tail sampling ile hata/gecikme bias'ı eklenir</td>
+          </tr>
+          <tr>
+            <td>Metrik modeli</td>
+            <td><code>System.Diagnostics.Metrics</code> + Prometheus exporter</td>
+            <td>Custom counter endpoint</td>
+            <td>Standart; histogram/percentile; SDK'dan bağımsız vendor</td>
+            <td>Cardinality tehlikesi — tag'lere guid/SKU koyulursa TSDB patlar</td>
+          </tr>
+          <tr>
+            <td>Cache katmanı</td>
+            <td>L1 (in-mem) + L2 (Redis) + Pub/Sub invalidation</td>
+            <td>Yalnız L2 Redis</td>
+            <td>L1 = network hop yok; sıcak okuma p99 ~µs</td>
+            <td>L1 staleness penceresi; cross-instance invalidation Pub/Sub'a bağımlı (at-most-once)</td>
+          </tr>
+          <tr>
+            <td>Stampede koruması</td>
+            <td><code>IDistributedLock</code> (Redis) + "single-flight"</td>
+            <td>Cache warm-up / probabilistic early expiry</td>
+            <td>Tek istek DB'ye gider; diğerleri bekler → thundering herd engellenir</td>
+            <td>Lock contention; lock süresi &gt; istek timeout olursa yeni bottleneck</td>
+          </tr>
+          <tr>
+            <td>Logging</td>
+            <td>Serilog + GELF sink (Graylog)</td>
+            <td>Dosya + grep</td>
+            <td>Structured (JSON) → alan bazlı arama; trace_id ile korelasyon</td>
+            <td>Log hacmi = maliyet; console/GELF double-write overhead; PII redaction zorunlu</td>
+          </tr>
+          <tr>
+            <td>Exception tracking</td>
+            <td>Sentry (release + breadcrumb + trace link)</td>
+            <td>Yalnız log</td>
+            <td>Gruplama, regresyon tespiti, release health; stack trace zengin</td>
+            <td>Sampling/config maliyeti; PII scrub kritik (Sentry'ye veri sızabilir)</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SAVAŞ HİKAYESİ #1
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>💥 Savaş hikayesi #1 — "Gen2 GC Fırtınası: p99 Latency Çivisi"</h2>
+      <div class="war">
+        <p><strong>Senaryo:</strong> Telemetri işlemci, 40k msg/sn'de 3 ay sorunsuz çalıştı. Filo büyüyünce yük 90k msg/sn'ye çıktı. p99 latency 8ms'den <strong>340ms'ye</strong> fırladı; bazı dakikalarda consumer lag 2M mesaja ulaştı. CPU %40, bellek %70 — "kaynak yok" gibi görünmüyordu.</p>
+        <p><strong>Kök neden:</strong> Hot-path'te her mesaj için 3 allocation vardı: <code>Encoding.UTF8.GetString()</code> (string), <code>JsonSerializer.Deserialize</code> (nesne grafiği), ve geofence kontrolünde <code>List&lt;double&gt;</code>. Mesaj başına ~9KB toplam; 90k/sn = <strong>~810 MB/s allocation rate</strong>. Bu, LOH'u (85KB+) tetikliyordu ve <strong>Gen2 blocking GC</strong> saniyede birkaç kez ~200ms pause yapıyordu. <code>dotnet-counters</code>'da <code>gc-gen2-count</code> ve <code>time-in-gc</code> doğrudan kanıtı verdi: <code>time-in-gc %38</code>.</p>
+        <p><strong>Çözüm:</strong> (1) <code>ReadOnlyMemory&lt;byte&gt;</code> + <code>Utf8JsonReader</code> ile zero-alloc parse, (2) geofence kontrolünde <code>stackalloc</code>/<code>Span&lt;double&gt;</code>, (3) <code>ArrayPool&lt;byte&gt;.Shared</code> + <code>finally</code> iade, (4) <code>DOTNET_gcServer=1</code> ve <code>DOTNET_GCHeapHardLimit</code> ile Server GC. Sonuç: <strong>allocation rate ~0, p99 = 6ms, Gen2 GC ~saatte bir</strong>.</p>
+        <p><strong>Ders:</strong> "Kaynak yetiyor" hiçbir şey ifade etmez. <strong>Allocation rate</strong> latency'nin görünmez katilidir. Ölçüm olmadan micro-optimization yapmak = kumar.</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SAVAŞ HİKAYESİ #2
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>💥 Savaş hikayesi #2 — "Prometheus'u Kendi Metriğimizle Vurduk"</h2>
+      <div class="war">
+        <p><strong>Senaryo:</strong> Ekip, "her istekte sipariş durumunu görmek istiyoruz" diyerek bir counter ekledi: <code>orders_processed_total{order_id, sku, customer_id}</code>. 2 hafta sonra Prometheus <strong>OOM</strong> ile crash loop'a girdi; Grafana panelleri dakikalarca yüklenmedi.</p>
+        <p><strong>Kök neden:</strong> Prometheus her benzersiz <em>label kombinasyonu</em> için ayrı bir time series tutar. <code>order_id</code> (uuid) ve <code>customer_id</code> unbounded cardinality üretti: 2 haftada <strong>~120 milyon time series</strong>. Bu bir "metric" değil, gizli bir log tablosuydu.</p>
+        <p><strong>Çözüm:</strong> (1) Label'lardan tüm unbounded değerler (uuid, sku, customer) çıkarıldı; yerine <code>status</code>, <code>region</code> gibi sonlu (bounded) boyutlar kondu, (2) yüksek-cardinality ihtiyaç için <strong>exemplar</strong> (trace_id) kullanıldı — metrikten Jaeger trace'ine atlama, (3) Prometheus'ta <code>metric_relabel_configs</code> ile "drop" guard'ı, (4) eğitimde "cardinality budget" kuralı: her servis toplam &lt;5000 aktif series.</p>
+        <p><strong>Ders:</strong> Metrik ve log farklı araçlardır. Bir metrik label'ına <strong>sınırsız değer</strong> koyuyorsanız, aslında metrik değil log üretiyorsunuz — ve storage'ı öldürüyorsunuz. Exemplar, "hangi istek?" sorusunun doğru cevabıdır.</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SAVAŞ HİKAYESİ #3
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>💥 Savaş hikayesi #3 — "Redis Sustu, Sistem Çöktü (Cache'i Kritik Yaptık)"</h2>
+      <div class="war">
+        <p><strong>Senaryo:</strong> Redis master failover sırasında 40 saniye erişilemez oldu. Inventory API, cache miss'te DB'ye gitti — ama <strong>aynı anda</strong> binlerce istek gitti (stampede). PostgreSQL connection pool (100) anında tükendi; <code>NpgsqlException: The connection pool has been exhausted</code>. Order akışı dahil <strong>tüm sistem durdu</strong>.</p>
+        <p><strong>Kök neden:</strong> İki anti-pattern: (1) Cache <em>kritik bağımlılık</em> haline gelmişti — Redis down olunca tüm trafik DB'ye yüklendi (cache-aside'ın "cache yoksa handler'a düş" davranışı doğru, ama <strong>thundering herd</strong> korumasızdı), (2) Cache-aside behavior'da in-memory L1 yoktu; her hit bir network round-trip.</p>
+        <p><strong>Çözüm:</strong> (1) <code>IDistributedLock</code> (Redis RedLock) ile "single-flight": key başına tek istek DB'ye gider, diğerleri bekleyip cache'ten okur, (2) kısa-TTL L1 in-memory cache (stale-while-revalidate), (3) <code>abortConnect=false</code> + circuit breaker: Redis down iken istekleri <strong>hızlı fail</strong> edip DB'yi koru, (4) DB connection pool limiti + <code>Timeout</code> metriği alert'e bağlandı.</p>
+        <p><strong>Ders:</strong> Cache'i "performans" için eklersiniz, ama yanlış yapılandırırsanız <strong>kritik bağımlılık</strong> haline gelir. Cache-aside + stampede koruması + circuit breaker üçlüsü ayrılmaz parçadır.</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         HANDS-ON LAB ADIMLARI
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>💻 Hands-on lab adımları</h2>
+      <p class="muted">Süre: ~5 saat kod + 1.5 saat tartışma. <span class="phase-badge phase-morning">SABAH</span> Perf (Span/GC/tracing), <span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> Observability (metrics/logs/Sentry) + Redis stampede.</p>
+
+      <ol class="lab">
+        <!-- LAB 1 -->
+        <li>
+          <strong><span class="phase-badge phase-morning">SABAH</span> Baseline ölçüm — önce kanıt, sonra optimization</strong>
+          <p>Telemetry processor'ı çalıştır, GC davranışının <em>baseline</em>'ını al. Optimizasyon öncesi fotoğraf çekmeden hiçbir şeyi değiştirme:</p>
+          <pre>dotnet run --project src/Services/Telemetry/TelemetryStreamProcessor
+# Ayrı terminal — canlı GC/görsel
+dotnet-counters monitor --process-id $(pgrep -f TelemetryStreamProcessor) \
+  --counters System.Runtime[gc-heap-size,gen-0-size,gen-1-size,gen-2-size,time-in-gc,alloc-rate,gc-gen0-count,gc-gen1-count,gc-gen2-count]</pre>
+          <p><code>alloc-rate</code> ve <code>time-in-gc</code> değerlerini <strong>not alın</strong>. Lab 4'te aynı değerleri "sonrası" olarak karşılaştıracağız. <span class="muted">(dotnet-counters yoksa: <code>dotnet tool install -g dotnet-counters</code>)</span></p>
+        </li>
+
+        <!-- LAB 2 -->
+        <li>
+          <strong><span class="phase-badge phase-morning">SABAH</span> GC modu deneyi — Server GC footprint vs throughput</strong>
+          <p>Workstation ve Server GC'yi <em>aynı</em> iş yükünde karşılaştır:</p>
+          <pre># Workstation (varsayılan)
+dotnet run -c Release --project src/Services/Telemetry/TelemetryStreamProcessor
+
+# Server GC — paralel heap segmentleri
+DOTNET_gcServer=1 \
+DOTNET_GCHeapCount=4 \
+DOTNET_gcConcurrent=1 \
+dotnet run -c Release --project src/Services/Telemetry/TelemetryStreamProcessor</pre>
+          <p>Load test (basit): <code>docker exec -it elp-kafka kafka-producer-perf-test ...</code> veya eğitmenin hazırladığı producer script'i. <strong>Tartışma:</strong> Server GC doğru seçim mi? (Cevap: throughput/latency profiline bağlı — tek-thread, memory-kısıtlı container'da Workstation kazanabilir.)</p>
+        </li>
+
+        <!-- LAB 3 -->
+        <li>
+          <strong><span class="phase-badge phase-morning">SABAH</span> Kriz senaryosu: Anti-pattern vs Golden Code (hot-path)</strong>
+          <p>Önce <strong>kasıtlı</strong> anti-pattern'i göster:</p>
+          <pre>// ❌ ANTI-PATTERN — her mesajda 3 allocation
+var json = Encoding.UTF8.GetString(kafkaValue);          // 1) string
+var payload = JsonSerializer.Deserialize&lt;TelemetryPayload&gt;(json); // 2) nesne grafiği
+var geofence = new List&lt;double&gt; { payload.Latitude, payload.Longitude }; // 3) LOH adayı
+await ProcessAsync(payload);</pre>
+          <p>Sonra <code>Span&lt;T&gt;</code> tabanlı çözümü uygula — <code>Models/TelemetryPayload.cs</code> zaten <code>DeserializeFromUtf8(ReadOnlySpan&lt;byte&gt;)</code> sunuyor:</p>
+          <pre>// ✅ GOLDEN CODE — sıfır heap allocation (hot path)
+void OnMessage(ReadOnlySpan&lt;byte&gt; value)
+{
+    // Utf8JsonReader ref struct'tır → heap'e kaçmaz
+    var point = TelemetryPayload.DeserializeFromUtf8(value);
+
+    // Geofence kontrolü → stackalloc (LOH yok)
+    Span&lt;double&gt; coord = stackalloc double[2];
+    coord[0] = point.Latitude;
+    coord[1] = point.Longitude;
+
+    if (GeofenceIndex.Contains(coord))     // Span alan overload
+        _agg.Add(in point);
+}</pre>
+          <p><code>dotnet-counters</code>'da <code>alloc-rate</code> ve <code>gen-0-size</code> tekrar oku — Lab 1 baseline'ı ile karşılaştır.</p>
+        </li>
+
+        <!-- LAB 4 -->
+        <li>
+          <strong><span class="phase-badge phase-morning">SABAH</span> DaTAS / POH — pinned object heap farkı</strong>
+          <p>Büyük, uzun ömürlü (sık pinlenen) buffer var mı? POH'u göster:</p>
+          <pre># POH (Pinned Object Heap) kullanımı
+readonly static byte[] s_scratch = GC.AllocateArray&lt;byte&gt;(1024 * 1024, pinned: true);
+
+# Runtime event ile POH allocation doğrula
+dotnet-trace collect --process-id &lt;PID&gt; --providers Microsoft-Windows-DotNETRuntime:0x1:5
+# trace'i PerfView / dotnet-trace report ile aç → GCAllocationTick, PinnedObjectHeap</pre>
+          <p><strong>Tartışma:</strong> <code>stackalloc</code> ne zaman tehlikeli? (Cevap: &gt;~1KB veya döngü içi → stack overflow. Büyük buffer → <code>ArrayPool</code>. Sık pinlenen ve büyüyen → POH.)</p>
+        </li>
+
+        <!-- LAB 5 -->
+        <li>
+          <strong><span class="phase-badge phase-morning">SABAH</span> OpenTelemetry: ActivitySource + Meter + korelasyon</strong>
+          <p>Telemetry processor'a custom span ve metrik ekle. <code>Shared.Observability</code> altında ortak <code>ActivitySource</code>/<code>Meter</code> tanımla:</p>
+          <pre>// Shared.Observability/ObservabilityNames.cs
+public static class ObservabilityNames
+{
+    public const string ServiceNamespace = "evolutionary-logistics";
+    public static readonly ActivitySource TelemetryPipeline = new("EvolutionaryLogistics.Telemetry");
+    public static readonly Meter TelemetryMeter = new("EvolutionaryLogistics.Telemetry");
+
+    // Bounded labels only! SKU/uuid YASAK.
+    public static readonly Histogram&lt;double&gt; BatchFlushMs =
+        TelemetryMeter.CreateHistogram&lt;double&gt;("telemetry.batch_flush_ms");
+    public static readonly Counter&lt;long&gt; PointsIngested =
+        TelemetryMeter.CreateCounter&lt;long&gt;("telemetry.points_ingested");
+}</pre>
+          <pre>// Hot-path instrumentation — ActivitySource.StartActivity allocation-aware
+using var activity = ObservabilityNames.TelemetryPipeline.StartActivity("FlushBatch");
+activity?.SetTag("batch.size", batch.Count);
+
+var sw = Stopwatch.GetTimestamp();
+await _store.BulkUpsertAsync(batch.Items, ct);
+ObservabilityNames.BatchFlushMs.Record(Stopwatch.GetElapsedTime(sw).TotalMilliseconds,
+    new KeyValuePair&lt;string, object?&gt;("outcome", ok ? "ok" : "error"));
+ObservabilityNames.PointsIngested.Add(batch.Count);</pre>
+          <p>Program.cs'te kaydı doğrula ve Jaeger'da trace'i aç:</p>
+          <pre>builder.Services.AddOpenTelemetry()
+    .ConfigureResource(r =&gt; r.AddService("telemetry-stream-processor"))
+    .WithTracing(t =&gt; t
+        .AddSource("EvolutionaryLogistics.Telemetry")   // ← .AddSource ZORUNLU, yoksa span üretilmez
+        .AddOtlpExporter(o =&gt; o.Endpoint = new Uri("http://localhost:4317")))
+    .WithMetrics(m =&gt; m
+        .AddMeter("EvolutionaryLogistics.Telemetry")
+        .AddOtlpExporter(o =&gt; o.Endpoint = new Uri("http://localhost:4317")));
+
+# Jaeger UI → telemetry-stream-processor servisi → FlushBatch span
+open http://localhost:16686</pre>
+        </li>
+
+        <!-- LAB 6 -->
+        <li>
+          <strong><span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> Sampling: head vs tail</strong>
+          <p>SDK tarafında head sampling'i <code>ParentBased</code> + oran ile kur:</p>
+          <pre>builder.Services.AddOpenTelemetry()
+    .WithTracing(t =&gt; t
+        .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(0.10))) // %10
+        .AddSource("EvolutionaryLogistics.Telemetry")
+        .AddOtlpExporter(o =&gt; o.Endpoint = new Uri("http://localhost:4317")));</pre>
+          <p>Yük altında Jaeger'da span sayısının düştüğünü gör. Sonra <strong>tail sampling</strong>'i collector'a ekle (hata/gecikme daima örneklenir):</p>
+          <pre># infra/otel/otel-collector-config.yaml — processors altına ekle
+processors:
+  tail_sampling:
+    decision_wait: 10s
+    policies:
+      - name: errors-always
+        type: status_code
+        status_code: { status_codes: [ERROR] }
+      - name: slow-traces
+        type: latency
+        latency: { threshold_ms: 500 }
+  # service.pipelines.traces.processors: [tail_sampling, batch]</pre>
+          <p><strong>Tartışma:</strong> Head sampling ucuz ama hatalı trace'i kaçırabilir; tail sampling doğru ama collector'da tüm span'leri bellekte bekletir. Prod'da genelde <strong>ikisi birlikte</strong> kullanılır.</p>
+        </li>
+
+        <!-- LAB 7 -->
+        <li>
+          <strong><span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> Serilog → Graylog: trace_id korelasyonu (GELF)</strong>
+          <p>Serilog'u structured + GELF sink ile kur; her log satırında <code>TraceId</code> olsun:</p>
+          <pre>builder.Host.UseSerilog((ctx, cfg) =&gt; cfg
+    .ReadFrom.Configuration(ctx.Configuration)
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("service", "inventory-service")
+    // W3C trace_id her log satırına → Graylog'da Jaeger ile eşleşir
+    .Enrich.WithSpan()                       // Serilog.Enrichers.Span
+    .WriteTo.Console(new CompactJsonFormatter())
+    .WriteTo.GelfUdp(new Uri("udp://localhost:12201"),
+        new GelfUdpSinkOptions { Host = Dns.GetHostName() }));
+
+# Graylog UI → Search: trace_id:"<jaeger-trace-id>"  → aynı isteğin tüm logları
+open http://localhost:9000</pre>
+          <div class="mermaid">
+sequenceDiagram
+  participant C as Client
+  participant GW as Gateway
+  participant INV as Inventory
+  participant J as Jaeger
+  participant G as Graylog
+  C->>GW: GET /api/inventory/SKU
+  GW->>INV: gRPC (traceparent)
+  INV->>INV: log {trace_id, span_id, sku}
+  INV-->>J: OTLP span
+  INV-->>G: GELF log ({trace_id})
+  Note over J,G: Aynı trace_id → cross-signal korelasyon
+      </div>
+        </li>
+
+        <!-- LAB 8 -->
+        <li>
+          <strong><span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> Sentry: exception + release + breadcrumb</strong>
+          <p>Sentry'yi (Relay'e) bağla, release ve trace link'i ekle:</p>
+          <pre>builder.WebHost.UseSentry(o =&gt;
+{
+    o.Dsn = builder.Configuration["Sentry:Dsn"];      // http://public@relay:3000/1
+    o.Environment = builder.Environment.EnvironmentName;
+    o.Release = "inventory-service@1.4.2";             // release health + regresyon
+    o.TracesSampleRate = 0.10;                          // perf trace (Jaeger'a ek)
+    o.SetBeforeSend(e =&gt;
+    {
+        // PII scrub — Sentry'ye veri sızmasın
+        e.ServerName = null;
+        e.User = null;
+        return e;
+    });
+});</pre>
+          <pre>// Zengin context: breadcrumb + trace bağlantısı
+try { await _grpc.ReserveAsync(req, ct); }
+catch (RpcException ex)
+{
+    SentrySdk.AddBreadcrumb("gRPC reserve failed", "grpc",
+        data: new { status = ex.StatusCode.ToString(), deadline = ex.Trailers });
+    SentrySdk.CaptureException(ex);
+    throw;
+}</pre>
+          <p>Kasıtlı bir exception fırlat → Sentry event'inde <strong>release</strong>, <strong>trace_id</strong> ve breadcrumb zincirini gör. Sonra aynı <code>trace_id</code>'yi Graylog'da ara.</p>
+        </li>
+
+        <!-- LAB 9 -->
+        <li>
+          <strong><span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> Kriz senaryosu: Cache Stampede &amp; single-flight</strong>
+          <p>Gün 2'de bıraktığımız stampede'i bu kez <strong>çözüyoruz</strong>. Önce 50 eş zamanlı istek at:</p>
+          <pre># DB connection pool'u izle
+dotnet-counters monitor --process-id &lt;INV-PID&gt; --counters Npgsql
+
+# Stampede
+for i in $(seq 1 50); do curl -s http://localhost:8082/api/inventory/TIRE-205-55-R16 &amp;; done; wait</pre>
+          <p>Cache-aside behavior'a <code>IDistributedLock</code> tabanlı single-flight ekle:</p>
+          <pre>// CacheAsideBehavior içine — MISS yolunda
+var lockKey = $"lock:{cacheable.CacheKey}";
+await using var handle = await _distributedLock.AcquireAsync(lockKey, timeout: TimeSpan.FromSeconds(5));
+
+if (handle is null)
+{
+    // Lock alınamadı → başkası yüklüyor; kısa bekleyip cache'i tekrar dene
+    await Task.Delay(50, cancellationToken);
+    return await TryReadCacheOrExecute(cacheable, next, cancellationToken);
+}
+
+// Çift kontrol (double-checked): lock beklerken başkası yazmış olabilir
+var afterLock = await cache.GetStringAsync(cacheable.CacheKey, cancellationToken);
+if (afterLock is not null) return JsonSerializer.Deserialize&lt;TResponse&gt;(afterLock)!;
+
+return await TryReadCacheOrExecute(cacheable, next, cancellationToken);</pre>
+          <p>Tekrar yük ver: DB'ye giden istek sayısı <strong>50 değil, 1</strong> olmalı. Cache HIT loglarını Grafana/Prometheus cache hit-ratio paneli ile doğrula.</p>
+        </li>
+
+        <!-- LAB 10 -->
+        <li>
+          <strong><span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> Prometheus + Grafana: cardinality budget &amp; alert</strong>
+          <p>Metrikleri Prometheus'a al, panel kur, kardinaliteyi denetle:</p>
+          <pre># Aktif time series sayısı (cardinality budget kontrolü)
+curl -s http://localhost:9090/api/v1/label/__name__/values | jq '.data | length'
+
+# En çok series üreten metrikler
+curl -s "http://localhost:9090/api/v1/query?query=count by (__name__)({__name__=~\"telemetry.*\"})" | jq
+
+# GOTCHA deneyi: SKU'yu label yap → series patlar, sonra geri al
+# telemetry.points_ingested{sku="TIRE-205-55-R16"}  ← ASLA</pre>
+          <p>Alert örnekleri (Grafana/Prometheus rules):</p>
+          <pre># consumer lag yükseliyorsa
+kafka_consumergroup_lag{topic="telemetry.raw"} &gt; 100000
+# GC süresi sınırı
+rate(time_in_gc_seconds_total[1m]) &gt; 0.15
+# cache hit ratio düşüşü
+rate(cache_hits_total[5m]) / (rate(cache_hits_total[5m]) + rate(cache_misses_total[5m])) &lt; 0.7</pre>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         GOTCHA (TUZAK) UYARILARI
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>⚠️ Gotcha (tuzak) uyarıları</h2>
+
+      <div class="gotcha">
+        <strong>Span&lt;T&gt; / ref struct: async ve field yasağı</strong>
+        <p><code>Span&lt;T&gt;</code>, <code>ReadOnlySpan&lt;T&gt;</code> ve <code>Utf8JsonReader</code> birer <code>ref struct</code>'tır. <strong>async metotta local olarak tutulamaz</strong> (state machine'e giremez), <strong>class field olamaz</strong>, <code>Task</code> içinde <code>await</code> sonrası kullanılamaz. Ayrıca bir lambda/closures içine capture edilemez. Hot-path'i senkron tut; async gerekiyorsa <code>ReadOnlyMemory&lt;T&gt;</code> kullan.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>stackalloc: &gt;1KB = StackOverflowException</strong>
+        <p><code>stackalloc</code> thread stack'ten yer alır (varsayılan ~1MB). Döngü içinde veya &gt;~1KB için kullanmayın — <code>StackOverflowException</code> <strong>yakalanamaz</strong>, process anında ölür. Büyük/yeniden kullanılan buffer → <code>ArrayPool&lt;T&gt;</code>. Sık pinlenen + büyük → <code>GC.AllocateArray(pinned: true)</code> (POH).</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>ActivitySource: Dispose etmek ve listener olmaması</strong>
+        <p><code>ActivitySource</code>'ı <strong>static</strong> tutun, <code>Dispose</code> etmeyin. Hiçbir listener (OTEL SDK) yoksa <code>StartActivity()</code> <code>null</code> döner — bu yüzden <code>activity?.SetTag(...)</code> gibi null-conditional kullanın. Ayrıca <code>.AddSource("...")</code> ile kaynak adını <strong>tam eşleşmeyle</strong> kaydetmezseniz span'lar sessizce üretilmez.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>Metric cardinality bombası</strong>
+        <p>Metrik label'ına <code>order_id</code>/<code>sku</code>/<code>user_id</code> gibi <strong>unbounded</strong> değer koymayın. Her benzersiz kombinasyon ayrı time series'tir; Prometheus OOM'a gider. "Hangi istek?" sorusu için <strong>exemplar</strong> (trace_id) kullanın — metrikten Jaeger trace'ine atlama. Eğitimde kural: servis başına &lt;5000 aktif series.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>OTEL exporter kapanışı — son span'ler kaybolmasın</strong>
+        <p>Uygulama <code>SIGTERM</code> ile kapanırken batch exporter kuyruğu flush edilmezse son span/log'lar kaybolur. ASP.NET Core'da <code>AddOpenTelemetry().WithTracing(...)</code> hosted service ile flush eder; ama worker/console uygulamalarda <code>TelemetryConfiguration</code>/<code>TracerProvider</code>'ı <code>Dispose</code> veya <code>ForceFlush</code> çağırın. Graceful shutdown süresi (K8s <code>terminationGracePeriodSeconds</code>) yeterli olmalı.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>ArrayPool: return unutulursa sessiz sızıntı</strong>
+        <p><code>ArrayPool&lt;byte&gt;.Shared</code> iade edilmeyen buffer'ları asla geri almaz; pool boşalınca her istek yeni <code>new byte[]</code> üretir → hedeflediğin "zero-alloc" kaybolur. Her zaman <code>try/finally</code> ile <code>Return(array, clearArray: false)</code>. Ayrıca pool'dan gelen buffer <strong>sıfırlanmış değildir</strong> — eski veri kalabilir (gizlilik + parse hataları).</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>Redis: IConnectionMultiplexer singleton + KEYS yasağı</strong>
+        <p><code>ConnectionMultiplexer.Connect</code>'i <strong>bir kez</strong> yapın ve DI singleton olarak paylaşın — her istekte yenisi = socket+ağ patlaması. Pattern invalidation'da <code>KEYS inventory:*</code> <strong>kullanmayın</strong> (O(N), Redis'i bloklar); <code>server.KeysAsync(pattern:)</code> (SCAN tabanlı) kullanın. Ama SCAN de tüm keyspace'i tarar — milyonlarca key'de namespace tasarımı yapın.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>Server GC container'da memory limitini aşar</strong>
+        <p><code>DOTNET_gcServer=1</code> her çekirdek için ayrı heap segmenti ayırır. 8 çekirdekli bir container'a 1GB limit verirseniz GC, heap'i büyütmeye çalışırken <strong>OOMKilled</strong> olursunuz. <code>DOTNET_GCHeapHardLimit</code> (ör. <code>0x40000000</code>=1GB) veya Kubernetes'ta <code>GOMEMLIMIT</code> benzeri limit ile GC'yi sınırlayın — aksi halde container, sınırı bilmeden ölür.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>Serilog double-write &amp; PII</strong>
+        <p>Console + GELF aynı anda yazmak CPU/IO overhead ve log kopyası demektir; prod'da <code>MinimumLevel.Override</code> ile framework log'larını kısın. Daha kritik: structured log'a <code>Authorization</code> header, JWT, TCKN, kart no sızabilir — <code>Destructure.ByTransforming</code>/<code>WithSensitiveDataMasking</code> ile maskeleme zorunlu.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>Sentry: PII ve event hacmi</strong>
+        <p>Varsayılan <code>SendDefaultPii=false</code> olsa da <code>Request</code> body/cookie ve breadcrumb'lar veri taşır. <code>SetBeforeSend</code> ile scrub edin. Ayrıca her 4xx için exception göndermeyin (validation hataları) — Sentry'yi gürültüye boğar, gerçek regresyonu gizler. <code>TracesSampleRate</code> düşük tutun (ör. 0.1).</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>Ölçmeden optimize etmek</strong>
+        <p>Bu günün tek kuralı: <strong>baseline ölç, sonra değiştir, sonra tekrar ölç</strong>. <code>dotnet-counters</code> (canlı), <code>dotnet-trace</code> (event), <code>dotnet-gcdump</code>/<code>dotnet-dump</code> (post-mortem) araçlarını göster. "Micro-optimization" sezgisi prod'da yanıltır; allocation profili <code>dotnet-trace</code> + PerfView/Speedscope ile kanıtlanır.</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         EĞİTMEN NOTLARI — ZAMAN PLANI
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>📋 Eğitmen notları (zaman planı)</h2>
+      <table>
+        <thead><tr><th>Saat</th><th>Blok</th><th>Not</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>09:00–09:45</td>
+            <td>Trade-off tablosu + War Story #1</td>
+            <td>"Önce ölç" mottosu ile aç. Katılımcıya sor: "Son prod latency sorununuzun kök nedeni neydi?" Allocation mı GC mi?</td>
+          </tr>
+          <tr>
+            <td>09:45–10:30</td>
+            <td>Lab 1–2: Baseline + GC modu</td>
+            <td><code>dotnet-counters</code> ekranda canlı. Server GC'nin memory footprint'ini göster</td>
+          </tr>
+          <tr>
+            <td>10:45–12:00</td>
+            <td>Lab 3–4: Span/stackalloc + POH</td>
+            <td>Anti-pattern → Golden Code dönüşümünü ikili gruplarla yaptır. <code>alloc-rate</code> farkını kanıtla</td>
+          </tr>
+          <tr>
+            <td>12:00–12:30</td>
+            <td>War Story #2: Cardinality bombası</td>
+            <td>Prometheus'ta canlı <code>count by (__name__)</code> sorgusu. "Metrik ≠ log" ayrımını vurgula</td>
+          </tr>
+          <tr>
+            <td>13:30–14:30</td>
+            <td>Lab 5–6: OTel trace + sampling</td>
+            <td>Jaeger'da span gör → oranı düşür → tail sampling ekle. Head vs tail tartışması</td>
+          </tr>
+          <tr>
+            <td>14:30–15:15</td>
+            <td>Lab 7–8: Serilog/Graylog + Sentry</td>
+            <td>Tek <code>trace_id</code>'yi üç araçta da bulma demosu — günün "aha" anı</td>
+          </tr>
+          <tr>
+            <td>15:30–16:30</td>
+            <td>Lab 9: Cache stampede + single-flight</td>
+            <td>War Story #3 ile bağla. DB connection pool tükenişini canlı göster, sonra lock ile çöz</td>
+          </tr>
+          <tr>
+            <td>16:30–17:00</td>
+            <td>Lab 10 + Retrospektif</td>
+            <td>Gün 4 preview: "Yarın bu gözlemlenebilir platforma bir 'beyin' ekleyeceğiz — Semantic Kernel, MCP tool'ları, RAG ve PII guardrail'ler"</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         REFERANS: DOSYA HARİTASI
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>📁 Gün 3 dosya haritası</h2>
+      <table>
+        <thead><tr><th>Dosya / Klasör</th><th>Açıklama</th><th>Lab</th></tr></thead>
+        <tbody>
+          <tr><td><code>src/Services/Telemetry/TelemetryStreamProcessor/Models/TelemetryPayload.cs</code></td><td><code>DeserializeFromUtf8(ReadOnlySpan&lt;byte&gt;)</code> — zero-alloc struct</td><td>Lab 3</td></tr>
+          <tr><td><code>src/Services/Telemetry/TelemetryStreamProcessor/Kafka/KafkaTelemetryConsumer.cs</code></td><td>ArrayPool + Channel pipeline (Gün 2) — GC ölçüm noktası</td><td>Lab 1, 3, 4</td></tr>
+          <tr><td><code>src/Services/Telemetry/TelemetryStreamProcessor/Processing/TelemetryBatchProcessor.cs</code></td><td>Batch flush + Npgsql COPY — instrumentation hedefi</td><td>Lab 5</td></tr>
+          <tr><td><code>src/BuildingBlocks/Shared.Observability/</code></td><td><code>ObservabilityNames</code>: static ActivitySource + Meter + OTel DI uzantıları</td><td>Lab 5, 6</td></tr>
+          <tr><td><code>src/BuildingBlocks/Shared.Kernel/Caching/CacheAsideBehavior.cs</code></td><td>Cache-Aside + cache hit/miss Activity tag → single-flight eklenecek</td><td>Lab 9</td></tr>
+          <tr><td><code>src/BuildingBlocks/Shared.Kernel/Caching/CacheInvalidationHandler.cs</code></td><td>Domain Event → Redis SCAN + Pub/Sub invalidation</td><td>Lab 9</td></tr>
+          <tr><td><code>infra/otel/otel-collector-config.yaml</code></td><td>OTLP receiver → Jaeger + (tail_sampling eklenecek)</td><td>Lab 6</td></tr>
+          <tr><td><code>infra/prometheus/prometheus.yml</code></td><td>Scrape config — dotnet-services job</td><td>Lab 10</td></tr>
+          <tr><td><code>infra/grafana/provisioning/</code></td><td>Datasource provisioning (Prometheus/Jaeger)</td><td>Lab 10</td></tr>
+          <tr><td><code>docker-compose.yml</code></td><td>jaeger, otel-collector, prometheus, grafana, graylog, relay servisleri</td><td>Tüm lab</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Ortam değişkenleri: <code>OTEL_EXPORTER_OTLP_ENDPOINT</code>, <code>OTEL_SERVICE_NAME</code>, <code>DOTNET_gcServer</code>, <code>DOTNET_GCHeapHardLimit</code>, <code>Sentry__Dsn</code> — docker-compose <code>x-dotnet-env</code> anchor'ında tanımlı.</p>
+    </section>
+
+  </main>
+
+  <footer>
+    Evolutionary Logistics Trainer Playbook · Gün 3 · Performans &amp; Observability: Span&lt;T&gt;, GC, OpenTelemetry, Redis, Serilog/Graylog, Sentry
+  </footer>
+
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "loose" });
+  </script>
+</body>
+</html>

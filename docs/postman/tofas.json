@@ -1,0 +1,697 @@
+{
+  "info": {
+    "_postman_id": "e7c1a2b3-4d5e-4f6a-8b9c-0d1e2f3a4b5c",
+    "name": "Tofas",
+    "description": "# Evolutionary Logistics & Telemetry Platform\n\nGun 3 (Performans & Gozlemlenebilirlik) ve Gun 4 (AI Entegrasyonu) servislerini **tek tikla tetikleyip test etmek** icin hazirlanmis Postman koleksiyonu.\n\n## On kosul\n\n```bash\ndocker compose up -d --build\ndocker compose ps          # 17 konteyner ayakta olmali\n```\n\n## Import sonrasi\n\n1. Postman > **Import** > bu dosyayi sec.\n2. Koleksiyonun **Variables** sekmesinde ki `baseUrl` degiskenleri host'una gore ayarla (varsayilan `localhost`).\n3. Klasorleri sirasiyla **Run** edebilir ya da tek tek gonderebilirsin.\n\n## Calisma modu (iki katman)\n\n- **Dogrudan servis** istekleri: `:8081` (Order), `:8082` (Inventory), `:8083` (AI) portlarina gider. Middleware yoktur; izole test icin idealdir.\n- **Gateway uzerinden** istekler: `:8080` portuna gider. YARP yonlendirme + rate limit + PII maskeleme + LLM token kotasi middleware'lerinden gecer. Gercek uretim yoludur.\n\n> Ayrintili aciklamalar icin: `docs/SERVICE-TESTING-GUIDE.md`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "gateway", "value": "http://localhost:8080", "type": "string" },
+    { "key": "orderDirect", "value": "http://localhost:8081", "type": "string" },
+    { "key": "inventoryDirect", "value": "http://localhost:8082", "type": "string" },
+    { "key": "aiDirect", "value": "http://localhost:8083", "type": "string" },
+    { "key": "jaeger", "value": "http://localhost:16686", "type": "string" },
+    { "key": "prometheus", "value": "http://localhost:9090", "type": "string" },
+    { "key": "grafana", "value": "http://localhost:3001", "type": "string" },
+    { "key": "graylog", "value": "http://localhost:9000", "type": "string" },
+    { "key": "tenantId", "value": "tenant-42", "type": "string" },
+    { "key": "sku", "value": "SKU-1234", "type": "string" },
+    { "key": "orderId", "value": "ORD-10023", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "00 - Saglik Kontrolleri (Dogrudan Servis)",
+      "description": "Her HTTP servisinin kendi portundan dogrudan saglik kontrolu. Gateway'i baypas eder; en temel 'servis ayakta mi?' testidir.\n\n**Beklenen:** hepsi `200 OK`.",
+      "item": [
+        {
+          "name": "Gateway Root",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));",
+                  "pm.test('Govde gateway kimligini donduruyor', () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.service).to.eql('Evolutionary Logistics API Gateway');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/",
+              "host": ["{{gateway}}"],
+              "path": [""]
+            },
+            "description": "**Tetikleme:** Gateway'in kendi kok endpoint'i (YARP proxy DEGIL).\n\n**Donen veri:**\n```json\n{ \"service\": \"Evolutionary Logistics API Gateway\", \"yarp\": \"3.12.1\", \"routes\": [\"/api/orders\", \"/api/inventory\", \"/api/ai\"] }\n```\nBu cagri gateway process'inin ayakta oldugunu ve YARP surumunu dogrular."
+          }
+        },
+        {
+          "name": "Order Service - /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));",
+                  "pm.test('context = orders', () => pm.expect(pm.response.json().context).to.eql('orders'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderDirect}}/health",
+              "host": ["{{orderDirect}}"],
+              "path": ["health"]
+            },
+            "description": "**Tetikleme:** Order servisine dogrudan (port 8081).\n\n**Donen veri:**\n```json\n{ \"status\": \"healthy\", \"context\": \"orders\" }\n```\nOrder servisi bugun yalnizca `/health` ve `/` barindirir; ES/CQRS uclari Gun 1 laboratuvarlarinda eklenir."
+          }
+        },
+        {
+          "name": "Order Service - Root",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderDirect}}/",
+              "host": ["{{orderDirect}}"],
+              "path": [""]
+            },
+            "description": "**Tetikleme:** Order servisi kok endpoint'i.\n\n**Donen veri:**\n```json\n{ \"message\": \"Order service - Day 1 ES/CQRS labs land here\" }\n```"
+          }
+        },
+        {
+          "name": "Inventory Service - /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));",
+                  "pm.test('context = inventory', () => pm.expect(pm.response.json().context).to.eql('inventory'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{inventoryDirect}}/health",
+              "host": ["{{inventoryDirect}}"],
+              "path": ["health"]
+            },
+            "description": "**Tetikleme:** Inventory servisine dogrudan (port 8082).\n\n**Donen veri:**\n```json\n{ \"status\": \"healthy\", \"context\": \"inventory\" }\n```\nNot: gRPC servis pipeline'i kayitli ama `MapGrpcService` henuz yorumda (Gun 2 labi) - `/grpc/inventory/*` yollari su an 404 doner."
+          }
+        },
+        {
+          "name": "AI MCP Server - /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));",
+                  "pm.test('service = ai-mcp-server', () => pm.expect(pm.response.json().service).to.eql('ai-mcp-server'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{aiDirect}}/health",
+              "host": ["{{aiDirect}}"],
+              "path": ["health"]
+            },
+            "description": "**Tetikleme:** AI MCP sunucusuna dogrudan (port 8083).\n\n**Donen veri:**\n```json\n{ \"status\": \"healthy\", \"service\": \"ai-mcp-server\" }\n```\n`AI__ApiKey` bos olsa bile servis ayakta kalir (LLM servisleri kayit edilmez, `/api/assistant/ask` 503 doner)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 - Gateway Uzerinden Proxy (YARP)",
+      "description": "Ayni saglik uclarini gateway overinden cagirir. YARP route eslesmesi, `PathRemovePrefix` donusumleri ve rate limit policy'lerini dogrular.\n\n| Istek | Route | Policy | Beklenen |\n|---|---|---|---|\n| `/api/orders/health` | orders-api | write-heavy | 200 |\n| `/api/read/orders/health` | orders-read | read-heavy | 404 (downstream'de /read yok) |\n| `/api/inventory/health` | inventory-api | read-heavy | 200 |\n| `/api/ai/health` | ai-api | ai-token-budget | 200 |\n| `/health/health` | health-aggregate | anonymous-burst | 200 |",
+      "item": [
+        {
+          "name": "Order via Gateway (/api/orders/*)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));",
+                  "pm.test('X-RateLimit-Policy = write-heavy', () => pm.expect(pm.response.headers.get('X-RateLimit-Policy')).to.eql('write-heavy'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/orders/health",
+              "host": ["{{gateway}}"],
+              "path": ["api", "orders", "health"]
+            },
+            "description": "**Tetikleme:** `GET /api/orders/health`\n\n**Transform zinciri:** `PathRemovePrefix /api/orders` -> Order servisine `GET /health`.\n\n**Donen veri:**\n```json\n{ \"status\": \"healthy\", \"context\": \"orders\" }\n```\nRate limit policy: `write-heavy` (saniyede 120 token, kuyruk 30)."
+          }
+        },
+        {
+          "name": "Order Read route (/api/read/orders/*)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Bu route su an 404 doner: Order.Api'de /read/... uclari Gun 1 labinda eklenecek.",
+                  "pm.test('Route eslesti (404 beklenir - downstream hazir degil)', () => pm.expect([404, 200]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/read/orders/health",
+              "host": ["{{gateway}}"],
+              "path": ["api", "read", "orders", "health"]
+            },
+            "description": "**Tetikleme:** `GET /api/read/orders/health`\n\n**Transform zinciri:** `PathRemovePrefix /api/read/orders` -> `PathPrefix /read` -> Order servisine `GET /read/health`.\n\n**Donen veri:** `404 Not Found` -- cunku Order.Api'de `/read/*` ucu henuz yok. Route'un kendisi dogru eslesir ve `X-Gateway-Route: orders-read` basligini ekler. CQRS read-model uclari Gun 1 labinda yazilinca 200 doner.\n\nRate limit policy: `read-heavy` (saniyede 500 token)."
+          }
+        },
+        {
+          "name": "Inventory via Gateway (/api/inventory/*)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));",
+                  "pm.test('X-RateLimit-Policy = read-heavy', () => pm.expect(pm.response.headers.get('X-RateLimit-Policy')).to.eql('read-heavy'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/inventory/health",
+              "host": ["{{gateway}}"],
+              "path": ["api", "inventory", "health"]
+            },
+            "description": "**Tetikleme:** `GET /api/inventory/health`\n\n**Transform:** `PathRemovePrefix /api/inventory` -> Inventory servisine `GET /health`.\n\n**Donen veri:**\n```json\n{ \"status\": \"healthy\", \"context\": \"inventory\" }\n```\nCluster LB policy: `RoundRobin`. Rate limit: `read-heavy`."
+          }
+        },
+        {
+          "name": "AI via Gateway (/api/ai/*) + Tenant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));",
+                  "pm.test('X-RateLimit-Policy = ai-token-budget', () => pm.expect(pm.response.headers.get('X-RateLimit-Policy')).to.eql('ai-token-budget'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/ai/health",
+              "host": ["{{gateway}}"],
+              "path": ["api", "ai", "health"]
+            },
+            "description": "**Tetikleme:** `GET /api/ai/health`\n\n**KRITIK:** `/api/ai/*` yollari `LlmTokenBudgetMiddleware` tarafindan korunur -- `X-Tenant-Id` header'i YOKSA `400 Bad Request` doner.\n\n**Transform:** `PathRemovePrefix /api/ai` -> AI servisine `GET /health`.\n\n**Donen veri:**\n```json\n{ \"status\": \"healthy\", \"service\": \"ai-mcp-server\" }\n```\nRate limit: `ai-token-budget` (saniyede 30 token)."
+          }
+        },
+        {
+          "name": "Health Aggregate route (/health/*)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));",
+                  "pm.test('Order health govdesi donuyor', () => pm.expect(pm.response.json().context).to.eql('orders'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/health/health",
+              "host": ["{{gateway}}"],
+              "path": ["health", "health"]
+            },
+            "description": "**Tetikleme:** `GET /health/health`\n\n**Transform:** `PathRemovePrefix /health` -> Order servisine `GET /health`.\n\n**Donen veri:**\n```json\n{ \"status\": \"healthy\", \"context\": \"orders\" }\n```\n\n**Gotcha:** `{**catch-all}` sifir segment de eslestigi icin `GET /health` (tek segment) istegi prefix silindikten sonra Order servisinin KOK (`/`) ucuna duser ve `{ \"message\": \"Order service ...\" }` doner. Gercek health govdesini almak icin `/health/health` kullanilir. AuthRequired=false, policy `anonymous-burst`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - AI Asistan (Dogrudan :8083)",
+      "description": "AI servisini gateway'i baypas ederek dogrudan tetikler. Middleware (PII maskeleme / token kotasi) yoktur; saf SK + RAG davranisini gorursunuz.\n\n**On kosul:** `AI__ApiKey` ortam degiskeni verilmisse `/api/assistant/ask` 200, aksi halde `503` doner (uydurma yanit uretilmez).",
+      "item": [
+        {
+          "name": "Asistana Sor (POST /api/assistant/ask)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ok = pm.response.code === 200;",
+                  "const noLlm = pm.response.code === 503;",
+                  "pm.test('200 (LLM var) veya 503 (API key yok) beklenir', () => pm.expect(ok || noLlm).to.be.true);",
+                  "if (ok) {",
+                  "    const b = pm.response.json();",
+                  "    pm.test('answer alani dondu', () => pm.expect(b).to.have.property('answer'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Id", "value": "user-1" },
+              { "key": "X-User-Roles", "value": "ops,reader" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"SKU-1234 kodlu urunun stok durumu nedir?\"\n}"
+            },
+            "url": {
+              "raw": "{{aiDirect}}/api/assistant/ask",
+              "host": ["{{aiDirect}}"],
+              "path": ["api", "assistant", "ask"]
+            },
+            "description": "**Tetikleme:** `POST /api/assistant/ask`\n\n**Gonderilen veri:**\n```json\n{ \"prompt\": \"SKU-1234 kodlu urunun stok durumu nedir?\" }\n```\n\n**Donen veri (200):**\n```json\n{ \"answer\": \"SKU-1234 icin guncel stok 142 adet, IST-01 deposunda.\" }\n```\n\n**Akis:** (1) RAG ile pgvector'dan ilgili dokuman cekilir, (2) prompt `<untrusted_document>` siniri ile kurulur, (3) LLM auto-function-calling ile `get_inventory_level` gibi tool'lari cagirir, (4) tool cagrilari guardrail filtresinden gecer.\n\n**Header'lar:** `X-User-Roles` zorunludur ki tool'lar yetkilendirilebilsin. Roller: `get_inventory_level`/`forecast_stockout` -> reader|ops|admin; `get_order_status` -> support|ops|admin. Bos rol => tool REDDEDILIR (fail-closed) => `KernelException` => 503.\n\n**503 durumunda:** `AI__ApiKey` / `AI__Endpoint` set edilmemis demektir."
+          }
+        },
+        {
+          "name": "RAG Dokuman Yukle (POST /api/rag/ingest)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 veya 500 (embedding anahtari yok) beklenir', () => pm.expect([200, 500]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('chunks sayisi dondu', () => pm.expect(pm.response.json()).to.have.property('chunks'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": \"depo-politikasi.md\",\n  \"content\": \"Izmir depo (IZM-03) iade sureci: musteriler 14 gun icinde iade talebi acabilir. Iade onaylandiginda urun 3 is gunu icinde depoya kabul edilir ve stok guncellenir. Hasarli urunler ayri karantina alanina alinir.\"\n}"
+            },
+            "url": {
+              "raw": "{{aiDirect}}/api/rag/ingest",
+              "host": ["{{aiDirect}}"],
+              "path": ["api", "rag", "ingest"]
+            },
+            "description": "**Tetikleme:** `POST /api/rag/ingest`\n\n**Gonderilen veri:**\n```json\n{ \"source\": \"depo-politikasi.md\", \"content\": \"Izmir depo iade sureci: ...\" }\n```\n\n**Donen veri:**\n```json\n{ \"chunks\": 1 }\n```\n\n**Akis:** icerik `DocumentChunker` ile parcalanir -> her parca icin embedding uretilir -> pgvector tablosuna (`ai.documents`) upsert edilir. `source` alani ayni kaynagin tekrar yuklenmesinde ustune yazmak icin kullanilir.\n\n**On kosul:** embedding icin `AI__ApiKey` gerekir; yoksa `500` doner."
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - AI via Gateway (kota + PII)",
+      "description": "AI uclarini gateway uzerinden cagirir. `X-Tenant-Id` ZORUNLUDUR (`LlmTokenBudgetMiddleware`). Istek govdesi `PiiMaskingMiddleware` tarafindan maskelenir; cevaptan sonra tenant kotasindan token dusulur.\n\n**Kota:** tenant basina gunluk 100.000 token (Redis uzerinde atomik sayac). Kota bitince model CAGRILMADAN `429` doner.",
+      "item": [
+        {
+          "name": "Asistana Sor via Gateway (+kota/PII)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const acceptable = [200, 429, 503];",
+                  "pm.test('200/429(kota)/503(LLM yok) beklenir', () => pm.expect(acceptable).to.include(pm.response.code));",
+                  "if (pm.response.code === 429) {",
+                  "    pm.test('Retry-After header var', () => pm.expect(pm.response.headers.has('Retry-After')).to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" },
+              { "key": "X-User-Roles", "value": "ops,reader" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Musteri 12345678901 (ahmet@example.com) siparisi ORD-10023 nerede?\"\n}"
+            },
+            "url": {
+              "raw": "{{gateway}}/api/ai/api/assistant/ask",
+              "host": ["{{gateway}}"],
+              "path": ["api", "ai", "api", "assistant", "ask"]
+            },
+            "description": "**Tetikleme:** `POST /api/ai/api/assistant/ask`\n\n**DIKKAT - cift `api` oneki:** `ai-api` route'u `PathRemovePrefix /api/ai` uygular; yani gateway yolu = `/api/ai` + AI'nin kendi yolu. AI servisindeki uç `/api/assistant/ask` oldugu icin gateway'den tam yol `/api/ai/api/assistant/ask` olur. (`/api/ai/assistant/ask` yazarsaniz downstream'e `/assistant/ask` gider ve `404` doner.)\n\n**Gonderilen veri:**\n```json\n{ \"prompt\": \"Musteri 12345678901 (ahmet@example.com) siparisi ORD-10023 nerede?\" }\n```\n\n**PII maskeleme kaniti:** istek govdesindeki 11 haneli TCKN -> `[ID_1]`, e-posta -> `[EMAIL_2]` olarak degistirilir ve LLM'e MASKELENMIS metin gider. Kanit icin gateway loglarina bak: `PII masked request path=/api/ai/api/assistant/ask entities=2`.\n\n**Model routing:** `PiiMaskingMiddleware` prompt'u siniflandirip `X-Model` header'i ekler (`gpt-4o-mini` veya `gpt-4o`).\n\n**Donen veri (200):**\n```json\n{ \"answer\": \"ORD-10023 siparisi 'Kargoda' durumunda.\" }\n```\n\n**429:** tenant'in gunluk 100.000 token kotasi tukendi. Model CAGRILMAZ (sifir maliyet).\n**400:** `X-Tenant-Id` header'i eksik.\n**503:** LLM saglayici anahtari yok (`AI__ApiKey`)."
+          }
+        },
+        {
+          "name": "RAG Yukle via Gateway (+kota)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 / 429 / 500 beklenir', () => pm.expect([200, 429, 500]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": \"gumruk-proseduru.md\",\n  \"content\": \"Ithalat gumruk proseduru: konşimento (B/L) ve fatura eslesmesi zorunludur. Eksik evrakta beyanname askiya alinir ve 5 is gunu icinde tamamlanmasi gerekir.\"\n}"
+            },
+            "url": {
+              "raw": "{{gateway}}/api/ai/api/rag/ingest",
+              "host": ["{{gateway}}"],
+              "path": ["api", "ai", "api", "rag", "ingest"]
+            },
+            "description": "**Tetikleme:** `POST /api/ai/api/rag/ingest` (cift `api` oneki - bkz. Asistana Sor aciklamasi).\n\n**Gonderilen veri:**\n```json\n{ \"source\": \"gumruk-proseduru.md\", \"content\": \"Ithalat gumruk proseduru: ...\" }\n```\n\n**Donen veri:** `{ \"chunks\": 2 }` (ornek)\n\n`X-Tenant-Id` zorunlu. Yeni tenant icin `quota:tokens:<tenantId>` Redis anahtari olusur; gun sonunda (UTC gece yarisi) TTL ile sifirlanir."
+          }
+        },
+        {
+          "name": "Kota Kontrol - Tenant Header YOK (400 beklenir)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400 bekleniyor', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"tenant header olmadan deneme\"\n}"
+            },
+            "url": {
+              "raw": "{{gateway}}/api/ai/api/assistant/ask",
+              "host": ["{{gateway}}"],
+              "path": ["api", "ai", "api", "assistant", "ask"]
+            },
+            "description": "**Tetikleme:** `X-Tenant-Id` header'i olmadan `POST /api/ai/api/assistant/ask`.\n\n**Donen veri:** `400 Bad Request` -- govde: `X-Tenant-Id header zorunlu.`\n\nBu, `LlmTokenBudgetMiddleware`'in anonim AI trafigini reddettigini kanitlar: tenant bilinmeden kota uygulanamaz."
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - MCP (Model Context Protocol, :8083 kok yol)",
+      "description": "AI servisinin MCP (Streamable HTTP) yuzeyi. JSON-RPC 2.0 mesajlari gonderilir.\n\n**DIKKAT - adres:** AI servisinde `app.MapMcp()` desen verilmeden cagrildigi icin MCP ucu **kok yolda** (`:8083/`) yayinlanir, `/mcp` DEGIL.\n\n**Onemli:** MCP sunucusu `Accept: application/json, text/event-stream` bekler ve yanitlari SSE olarak akitabilir. Postman SSE govdesini ham gosterir; arayuz dogrulamasi icin `npx @modelcontextprotocol/inspector` daha rahattir. Asagidaki istekler protokolu elle test etmek icindir.\n\n**Oturum:** `initialize` yanitindaki `Mcp-Session-Id` header'i sonraki cagrilarda gonderilebilir (test script'i bunu `mcpSessionId` degiskenine kaydeder).",
+      "item": [
+        {
+          "name": "initialize",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));",
+                  "const sid = pm.response.headers.get('Mcp-Session-Id');",
+                  "if (sid) { pm.collectionVariables.set('mcpSessionId', sid); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json, text/event-stream" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\",\n  \"params\": {\n    \"protocolVersion\": \"2024-11-05\",\n    \"capabilities\": {},\n    \"clientInfo\": { \"name\": \"postman\", \"version\": \"1.0.0\" }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{aiDirect}}/",
+              "host": ["{{aiDirect}}"],
+              "path": [""]
+            },
+            "description": "**Tetikleme:** MCP el sikismasi.\n\n**Gonderilen veri:** JSON-RPC `initialize` -- istemci protokol surumu ve yeteneklerini bildirir.\n\n**Donen veri (SSE icinde):**\n```json\n{ \"jsonrpc\": \"2.0\", \"id\": 1, \"result\": { \"protocolVersion\": \"2024-11-05\", \"capabilities\": { \"tools\": {} }, \"serverInfo\": { \"name\": \"ai-mcp-server\" } } }\n```\nYanit `Mcp-Session-Id` header'i dondurur; test script'i bunu `mcpSessionId` degiskenine kaydeder."
+          }
+        },
+        {
+          "name": "tools/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json, text/event-stream" },
+              { "key": "Mcp-Session-Id", "value": "{{mcpSessionId}}", "disabled": true }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/list\"\n}"
+            },
+            "url": {
+              "raw": "{{aiDirect}}/",
+              "host": ["{{aiDirect}}"],
+              "path": [""]
+            },
+            "description": "**Tetikleme:** Sunucudaki tool'lari listeler.\n\n**Donen veri:** `get_inventory_level`, `forecast_stockout`, `get_order_status` -- her biri girdi semasi (`inputSchema`) ile.\n\n`Mcp-Session-Id` header'i (initialize'dan gelen) gerekebilir; varsayilan olarak kapali birakildi, ayni oturum gerekiyorsa acin."
+          }
+        },
+        {
+          "name": "tools/call - get_inventory_level",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json, text/event-stream" },
+              { "key": "X-User-Roles", "value": "ops,reader" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"get_inventory_level\",\n    \"arguments\": { \"sku\": \"SKU-1234\" }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{aiDirect}}/",
+              "host": ["{{aiDirect}}"],
+              "path": [""]
+            },
+            "description": "**Tetikleme:** `get_inventory_level` tool'unu cagirir.\n\n**Gonderilen veri:**\n```json\n{ \"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"tools/call\", \"params\": { \"name\": \"get_inventory_level\", \"arguments\": { \"sku\": \"SKU-1234\" } } }\n```\n\n**Donen veri:**\n```json\n{ \"jsonrpc\": \"2.0\", \"id\": 3, \"result\": { \"content\": [ { \"type\": \"text\", \"text\": \"{\\\"sku\\\":\\\"SKU-1234\\\",\\\"quantity\\\":142,\\\"warehouse\\\":\\\"IST-01\\\"}\" } ] } }\n```\nKural: `sku` bicimi `^[A-Z0-9\\-]{3,32}$`. Cikti deterministic'tir (FNV-1a hash) -- ayni SKU her zaman ayni degeri doner.\n\n**Yetki:** `X-User-Roles` icinde `reader|ops|admin` olmalidir, aksi halde `denied`."
+          }
+        },
+        {
+          "name": "tools/call - get_order_status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json, text/event-stream" },
+              { "key": "X-User-Roles", "value": "ops,support" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 4,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"get_order_status\",\n    \"arguments\": { \"orderId\": \"ORD-10023\" }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{aiDirect}}/",
+              "host": ["{{aiDirect}}"],
+              "path": [""]
+            },
+            "description": "**Tetikleme:** `get_order_status` tool'unu cagirir.\n\n**Gonderilen veri:**\n```json\n{ \"jsonrpc\": \"2.0\", \"id\": 4, \"method\": \"tools/call\", \"params\": { \"name\": \"get_order_status\", \"arguments\": { \"orderId\": \"ORD-10023\" } } }\n```\n\n**Donen veri:**\n```json\n{ \"result\": { \"content\": [ { \"type\": \"text\", \"text\": \"{\\\"orderId\\\":\\\"ORD-10023\\\",\\\"status\\\":\\\"Kargoda\\\",\\\"customerId\\\":\\\"C-4821\\\"}\" } ] } }\n```\nKural: `orderId` bicimi `^[A-Za-z0-9\\-]{4,40}$`. Durum degerleri: `Hazirlaniyor | Kargoda | Teslim Edildi | Iptal`.\n\n**Yetki:** rol `support|ops|admin` olmalidir."
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - Altyapi & Gozlemlenebilirlik",
+      "description": "Docker Compose ile ayaga kalkan destek servisleri. Tarayicida da acilabilir; burada erisilebilirliklerini hizlica dogrulamak icin listelendi.",
+      "item": [
+        {
+          "name": "Jaeger UI",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{jaeger}}/",
+              "host": ["{{jaeger}}"],
+              "path": [""]
+            },
+            "description": "**Tetikleme:** Jaeger arayuzu (port 16686).\n\n**Donen veri:** HTML arayuz. OTLP gRPC 4317 / HTTP 4318 Jaeger'a dogrudan da gonderilebilir. `/api/traces?service=api-gateway` gibi Jaeger REST API uclari da kullanilabilir."
+          }
+        },
+        {
+          "name": "Prometheus - /-/healthy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{prometheus}}/-/healthy",
+              "host": ["{{prometheus}}"],
+              "path": ["-", "healthy"]
+            },
+            "description": "**Tetikleme:** Prometheus hazir mi (port 9090).\n\n**Donen veri:** `Prometheus Server is Healthy.` (duz metin)\n\nOTel Collector `:8889` uzerinden metrikleri exporter eder; scrape hedefi `otel-collector:8889`."
+          }
+        },
+        {
+          "name": "Grafana - /api/health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{grafana}}/api/health",
+              "host": ["{{grafana}}"],
+              "path": ["api", "health"]
+            },
+            "description": "**Tetikleme:** Grafana saglik ucu (port 3001).\n\n**Donen veri:**\n```json\n{ \"commit\": \"...\", \"database\": \"ok\", \"version\": \"11.5.2\" }\n```\nGiris: `admin` / `admin`."
+          }
+        },
+        {
+          "name": "Graylog - /api/system",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('HTTP 200 bekleniyor', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "admin", "type": "string" },
+                { "key": "password", "value": "admin", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{graylog}}/api/system",
+              "host": ["{{graylog}}"],
+              "path": ["api", "system"]
+            },
+            "description": "**Tetikleme:** Graylog sistem bilgisi (port 9000, basic auth admin/admin).\n\n**Donen veri:** Graylog surum/health JSON'u.\n\n**Manuel adim:** Serilog GELF loglarinin dusmesi icin Graylog arayuzunde **System > Inputs > GELF UDP (port 12201)** input'u tanimlanmalidir."
+          }
+        }
+      ]
+    }
+  ]
+}

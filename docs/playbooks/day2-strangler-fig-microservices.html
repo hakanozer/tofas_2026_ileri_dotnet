@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gün 2 — Strangler Fig: Microservice Geçişi, YARP, gRPC, Kafka & MassTransit | Eğitmen Playbook</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --text: #e7ecf3;
+      --muted: #9aa8bc;
+      --accent: #3d8bfd;
+      --accent2: #6ee7b7;
+      --warn: #fbbf24;
+      --danger: #f87171;
+      --border: #334155;
+      --font: "Segoe UI", "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+    header {
+      background: linear-gradient(135deg, #1a3c2e 0%, #0f1419 60%);
+      border-bottom: 1px solid var(--border);
+      padding: 2rem 2.5rem;
+    }
+    header h1 { margin: 0 0 0.35rem; font-size: 1.75rem; font-weight: 600; }
+    header p { margin: 0; color: var(--muted); max-width: 52rem; }
+    main { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 1.5rem;
+    }
+    h2 {
+      font-size: 1.25rem;
+      margin: 0 0 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    h3 { font-size: 1.05rem; color: var(--accent2); margin-top: 1.25rem; }
+    p, li { color: var(--text); }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin: 1rem 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.65rem 0.75rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--surface2); color: var(--accent2); font-weight: 600; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    .tag {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      background: var(--surface2);
+      color: var(--warn);
+      border: 1px solid var(--border);
+    }
+    pre, code {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+    }
+    pre {
+      background: #0a0e14;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.15rem;
+      overflow-x: auto;
+      line-height: 1.45;
+    }
+    code { color: #a5d6ff; }
+    .war {
+      border-left: 4px solid var(--danger);
+      padding-left: 1rem;
+      margin: 1rem 0;
+    }
+    .gotcha {
+      background: rgba(251, 191, 36, 0.08);
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      border-radius: 8px;
+      padding: 1rem 1.15rem;
+      margin: 0.75rem 0;
+    }
+    .gotcha strong { color: var(--warn); }
+    ol.lab { counter-reset: lab; list-style: none; padding: 0; }
+    ol.lab li {
+      counter-increment: lab;
+      margin-bottom: 1.25rem;
+      padding-left: 2.5rem;
+      position: relative;
+    }
+    ol.lab li::before {
+      content: counter(lab);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1.75rem;
+      height: 1.75rem;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 50%;
+      font-size: 0.8rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .mermaid { background: var(--surface2); border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+    .phase-badge {
+      display: inline-block;
+      padding: 0.2rem 0.65rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-right: 0.5rem;
+    }
+    .phase-morning { background: #1e3a5f; color: #93c5fd; }
+    .phase-afternoon { background: #3b1f2b; color: #fca5a5; }
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 2rem;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="tag">Evolutionary Logistics &amp; Telemetry Platform · Gün 2 / 8 saat</p>
+    <h1>Strangler Fig → Microservice Geçişi: YARP, gRPC, Kafka &amp; Outbox</h1>
+    <p>Gün 1'deki monolith modüllerini Strangler Fig pattern ile bağımsız servislere ayırma. YARP Gateway üzerinden trafik yönlendirme, gRPC inter-service communication, Kafka stream processing ve MassTransit Outbox ile dağıtık tutarlılık. <strong>Odak:</strong> sıfır downtime geçiş stratejisi, at-least-once semantics, zero-allocation Kafka tüketimi ve saga orkestrasyonu.</p>
+  </header>
+
+  <main>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         GÜNÜN HEDEFLERİ
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>🧭 Günün hedefleri</h2>
+      <ul>
+        <li>Strangler Fig: YARP rotalarını adım adım monolith'ten yeni mikroservislere yönlendirmek.</li>
+        <li>Order Service ↔ Inventory Service arası senkron iletişimi gRPC ile kurmak (Deadline propagation, OTEL span linking).</li>
+        <li>Telemetry Stream Processor'ı Kafka'dan tüketen zero-allocation consumer pipeline olarak çalıştırmak.</li>
+        <li>MassTransit + EF Core Outbox ile transactional event publish ve Saga choreography ayağa kaldırmak.</li>
+        <li>Redis Cache-Aside + Domain Event invalidation pipeline'ını canlı olarak test etmek.</li>
+      </ul>
+
+      <div class="mermaid">
+flowchart TB
+  subgraph Gateway["YARP API Gateway :8080"]
+    YARP[Route Rules<br/>yarp.json]
+  end
+
+  subgraph OrderMS["Order Service :8081"]
+    OREST[REST API]
+    OGRPC[gRPC Server]
+    OES[(Event Store<br/>PostgreSQL)]
+    OOUTBOX[(Outbox Table)]
+  end
+
+  subgraph InvMS["Inventory Service :8082"]
+    IREST[REST API]
+    IGRPC[gRPC Server]
+    IDB[(Inventory DB)]
+    IREDIS[(Redis Cache)]
+  end
+
+  subgraph Kafka["Apache Kafka"]
+    TRAW[telemetry.raw<br/>6 partitions]
+    CDC[logistics.cdc.*<br/>3 partitions]
+  end
+
+  subgraph TelProc["Telemetry Processor"]
+    KCONS[Kafka Consumer<br/>Channel+ArrayPool]
+    STORE[(telemetry.readings)]
+  end
+
+  subgraph Orch["Background Orchestrator"]
+    SAGA[Order Fulfillment Saga<br/>MassTransit]
+    OUTBOX[EF Core Outbox<br/>Delivery Worker]
+  end
+
+  RMQ[(RabbitMQ)]
+
+  YARP -->|/api/orders/*| OREST
+  YARP -->|/api/inventory/*| IREST
+  OGRPC <-->|"gRPC + Interceptors"| IGRPC
+  OES -->|CDC| CDC
+  OOUTBOX -->|poll| OUTBOX
+  OUTBOX -->|publish| RMQ
+  RMQ -->|consume| SAGA
+  TRAW -->|consume| KCONS
+  KCONS -->|batch write| STORE
+  IGRPC -->|query| IDB
+  IGRPC -->|cache-aside| IREDIS
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         MİMARİ KARAR & TRADE-OFF TABLOSU
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>🧠 Mimari karar &amp; trade-off tablosu</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Karar</th>
+            <th>Seçilen</th>
+            <th>Alternatif</th>
+            <th>Neden?</th>
+            <th>Bedel (trade-off)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Geçiş stratejisi</td>
+            <td>Strangler Fig + YARP route toggle</td>
+            <td>Big-bang rewrite</td>
+            <td>Sıfır downtime; her rota bağımsız switch edilir; rollback = yarp.json değişikliği</td>
+            <td>Geçiş süresi uzar; iki kod tabanı paralel yaşar; test matrisi büyür</td>
+          </tr>
+          <tr>
+            <td>Servisler-arası sync iletişim</td>
+            <td>gRPC + Protobuf + Global Interceptor</td>
+            <td>REST + HTTP Client</td>
+            <td>Binary serialization ~6x hızlı; contract-first (proto); streaming desteği; deadline propagation native</td>
+            <td>Debugging zorlaşır (binary); browser test zor (gRPC-Web gerekir); breaking change yönetimi (proto evolution)</td>
+          </tr>
+          <tr>
+            <td>Async event transport (Saga)</td>
+            <td>RabbitMQ + MassTransit Outbox</td>
+            <td>Kafka + custom outbox</td>
+            <td>MassTransit saga + outbox turnkey; RabbitMQ per-message ack, DLQ doğal; Kafka overkill for low-volume command events</td>
+            <td>RabbitMQ single-point-of-failure riski (mirror queue ile çöz); MassTransit coupling</td>
+          </tr>
+          <tr>
+            <td>Telemetri stream transport</td>
+            <td>Apache Kafka (6 partition)</td>
+            <td>RabbitMQ Streams / Redis Streams</td>
+            <td>Kafka: paralel tüketim (partition × consumer), replay, compaction; onlarca bin msg/sn throughput</td>
+            <td>Operasyonel karmaşıklık (offset, rebalance, ISR); dev ortamında kaynak tüketimi</td>
+          </tr>
+          <tr>
+            <td>Kafka consumer bellek yönetimi</td>
+            <td>Channel&lt;T&gt; + ArrayPool&lt;byte&gt; + Span&lt;T&gt;</td>
+            <td>Standart consumer + JSON.Deserialize(string)</td>
+            <td>GC baskısı sıfır; Gen0/Gen1 koleksiyon yok; p99 latency sabit</td>
+            <td>Kod karmaşıklığı artar; buffer return disiplini şart (pool exhaustion riski)</td>
+          </tr>
+          <tr>
+            <td>Outbox pattern</td>
+            <td>MassTransit EF Core Outbox (PostgreSQL)</td>
+            <td>Custom Outbox + Quartz poller</td>
+            <td>Aynı transaction'da saga state + message; DuplicateDetection built-in; idempotent consumer desteği</td>
+            <td>MassTransit'e bağımlılık; outbox table büyümesi (cleanup job gerekir)</td>
+          </tr>
+          <tr>
+            <td>Cache stratejisi</td>
+            <td>Cache-Aside (MediatR Behavior) + Pub/Sub invalidation</td>
+            <td>Write-Through / Write-Behind</td>
+            <td>Read-heavy CQRS modeline uygun; invalidation domain event'e bağlı = explicit kontrol</td>
+            <td>Cache stampede riski (çözüm: distributed lock); cross-instance eventual consistency penceresi</td>
+          </tr>
+          <tr>
+            <td>Saga pattern</td>
+            <td>Choreography + State Machine</td>
+            <td>Orchestration / Routing Slip</td>
+            <td>State machine = state diagram = dokümantasyon; branching (success/failure/timeout) doğal</td>
+            <td>N service × M event = karmaşık event haritası; debugging için saga state query gerekir</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SAVAŞ HİKAYESİ #1: STRANGLER FIG & YARP
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>💥 Savaş hikayesi #1 — "Strangler Fig Tuzağı: Header Kaybı"</h2>
+      <div class="war">
+        <p><strong>Senaryo:</strong> Kuzey Avrupa lojistik platformunda monolith'ten mikroservise geçiş sırasında YARP üzerinden <code>/api/orders</code> rotası yeni Order Service'e yönlendirildi. İlk 48 saat sorunsuz çalıştı. Sonra "kullanıcı yetkisiz" hataları patladı — ama sadece belirli müşterilerde.</p>
+        <p><strong>Kök neden:</strong> Monolith JWT'yi kendi middleware'inde parse edip <code>X-User-Id</code> header'ı ekliyordu. YARP request transformation kurallarında bu header taşınıyordu — ama monolith'in JWT middleware'i <strong>claim içine "tenant_id" koyan</strong> özel bir handler'ı vardı. Yeni serviste bu claim yoktu. Belirli müşteriler multi-tenant auth akışı kullanıyordu; diğerleri standart JWT ile çalışıyordu.</p>
+        <p><strong>Çözüm:</strong> (1) YARP'ın <code>RequestTransforms</code> bölümünde eksik header'ları inject eden custom transform yazıldı, (2) monolith ve yeni servis için <strong>paylaşılan JWT claim seti</strong> bir contract olarak tanımlandı (Shared.Kernel.Grpc), (3) A/B trafik split: %10 yeni servis, %90 monolith → kademeli rollout, (4) integration test: her rotanın multi-tenant token ile test edilmesi zorunlu hale getirildi.</p>
+        <p><strong>Ders:</strong> Strangler Fig'de en büyük risk <strong>implicit context</strong> kaybıdır. Monolith'te "her yerde erişilebilir" olan bilgi, servis sınırı geçildiğinde <strong>explicit olarak taşınmalıdır</strong>.</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SAVAŞ HİKAYESİ #2: KAFKA CONSUMER REBALANCE
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>💥 Savaş hikayesi #2 — "Kafka Rebalance Fırtınası"</h2>
+      <div class="war">
+        <p><strong>Senaryo:</strong> Telemetri işlemci 3 instance olarak deploy edildi (6 partition, 2 partition/instance). Yeni bir deploy sırasında rolling update yapıldı — yeni pod ayağa kalktıkça eski pod'lar shutdown oldu. Sonuç: <strong>22 dakika boyunca 0 mesaj işlendi</strong>.</p>
+        <p><strong>Kök neden:</strong> <code>PartitionAssignmentStrategy</code> default (Range) kullanılıyordu. Her pod değişiminde Kafka <strong>tüm partitionları revoke edip yeniden dağıtıyordu</strong> (eager rebalance). Rolling update sırasında N-1 pod → N pod → N-1 pod geçişleri sürekli rebalance tetikledi. <code>MaxPollIntervalMs</code> timeout (5 dk) dolmadan yeni consumer geldi → yine rebalance.</p>
+        <p><strong>Çözüm:</strong> (1) <code>CooperativeSticky</code> assignment strategy: sadece taşınan partitionlar revoke edilir, diğerleri çalışmaya devam eder, (2) <code>SessionTimeoutMs</code> 45s'e düşürüldü (faster failure detection), (3) Kubernetes'te <code>maxUnavailable: 0, maxSurge: 1</code> ile "yeni pod hazır, eski öl" stratejisi, (4) consumer lag metriği Prometheus'a eklendi — rebalance sırasında alarm.</p>
+        <p><strong>Ders:</strong> Kafka consumer group rebalance, production'da en sık karşılaşılan "sessiz veri kaybı" nedenidir. <code>CooperativeSticky</code> .NET 10'da varsayılan DEĞİLDİR — explicit set edilmelidir.</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SAVAŞ HİKAYESİ #3: OUTBOX TABLE GROWTH
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>💥 Savaş hikayesi #3 — "Outbox Table Bomba Gibi Patladı"</h2>
+      <div class="war">
+        <p><strong>Senaryo:</strong> MassTransit EF Core Outbox ile production'a çıkıldıktan 3 ay sonra PostgreSQL disk %97'ye ulaştı. <code>outbox.outbox_message</code> tablosu <strong>142 milyon satıra</strong> ulaşmıştı. RabbitMQ'ya deliver edilen mesajlar outbox'tan silinmiyordu.</p>
+        <p><strong>Kök neden:</strong> MassTransit outbox <strong>delivered mesajları otomatik silmez</strong>. <code>InboxState</code> tablosu da deduplikasyon için mesaj hash'leri biriktiriyordu. Cleanup job (<code>BusOutboxOptions.MessageDeliveryTimeout</code>) konfigüre edilmemişti.</p>
+        <p><strong>Çözüm:</strong> (1) MassTransit'in <code>BusOutboxOptions</code> cleanup ayarları aktifleştirildi, (2) PostgreSQL partitioned table ile <code>outbox_message</code> günlük partition'lara bölündü (<code>PARTITION BY RANGE (created_at)</code>), (3) 30 günden eski partition'lar <code>DROP PARTITION</code> ile temizlendi (DELETE yerine — 1000x hızlı), (4) pg_cron ile otomatik partition maintenance.</p>
+        <p><strong>Ders:</strong> Her outbox implementasyonu bir "yazma-optimized" tablodur. Cleanup stratejisi olmadan <strong>disk bombasıdır</strong>. Partition-by-time en etkili çözümdür.</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         HANDS-ON LAB ADIMLARI
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>💻 Hands-on lab adımları</h2>
+      <p class="muted">Süre: ~5 saat kod + 1.5 saat tartışma. <span class="phase-badge phase-morning">SABAH</span> gRPC + YARP, <span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> Kafka + Outbox + Cache.</p>
+
+      <ol class="lab">
+        <!-- LAB 1 -->
+        <li>
+          <strong><span class="phase-badge phase-morning">SABAH</span> Strangler Fig: YARP route switch</strong>
+          <p>Gün 1'de monolith'e giden <code>/api/orders</code> rotasını yeni Order Service'e yönlendir:</p>
+          <pre>// yarp.json — route değişikliği
+{
+  "RouteId": "orders-route",
+  "ClusterId": "order-service",
+  "Match": { "Path": "/api/orders/{**catch-all}" },
+  "Transforms": [
+    { "PathRemovePrefix": "/api/orders" },
+    { "RequestHeader": "X-Forwarded-Prefix", "Set": "/api/orders" },
+    { "RequestHeader": "X-Correlation-Id", "Set": "{Header:X-Correlation-Id}" }
+  ]
+}</pre>
+          <p>Test: <code>curl -H "Authorization: Bearer &lt;jwt&gt;" http://localhost:8080/api/orders</code></p>
+          <p>Header'ın downstream'de göründüğünü doğrula. <strong>Soru:</strong> <code>X-Correlation-Id</code> yoksa ne olur? (cevap: interceptor generate eder — Shared.Grpc)</p>
+        </li>
+
+        <!-- LAB 2 -->
+        <li>
+          <strong><span class="phase-badge phase-morning">SABAH</span> gRPC Interceptor pipeline test</strong>
+          <p>Order Service'ten Inventory Service'e gRPC çağrısı yap. Interceptor'ların sırasını Jaeger'da izle:</p>
+          <pre>// Order.Api → Inventory.Api gRPC call
+var channel = GrpcChannel.ForAddress("http://inventory-service:8082");
+var client = new InventoryGrpc.InventoryGrpcClient(channel);
+
+var response = await client.ReserveStockAsync(new ReserveStockRequest
+{
+    Sku = "TIRE-205-55-R16",
+    Quantity = 4,
+    OrderId = orderId.ToString()
+}, deadline: DateTime.UtcNow.AddSeconds(5));  // ← Deadline propagation</pre>
+          <p>Jaeger'da trace'i aç → <code>grpc.client → grpc.server</code> span'larını gör. <code>x-correlation-id</code> ve <code>traceparent</code> metadata'da var mı?</p>
+          <div class="mermaid">
+sequenceDiagram
+  participant OA as Order.Api
+  participant CI as Client Interceptor
+  participant SI as Server Interceptor
+  participant IA as Inventory.Api
+  OA->>CI: ReserveStock(sku, qty)
+  CI->>CI: JWT → metadata claims
+  CI->>CI: W3C traceparent inject
+  CI->>CI: Deadline propagation
+  CI->>SI: gRPC call + metadata
+  SI->>SI: Extract traceparent
+  SI->>SI: Parse claims → GrpcCallContext
+  SI->>SI: Enforce deadline
+  SI->>IA: Handler(request)
+  IA-->>SI: Response
+  SI-->>CI: Response + trailer
+  CI-->>OA: Response
+          </div>
+        </li>
+
+        <!-- LAB 3 -->
+        <li>
+          <strong><span class="phase-badge phase-morning">SABAH</span> Kriz senaryosu: Deadline aşımı</strong>
+          <p>Inventory handler'a yapay gecikme ekle, Order tarafında 2s deadline koy:</p>
+          <pre>// Inventory.Api — Handlers/ReserveStockHandler.cs
+public override async Task&lt;ReserveStockReply&gt; ReserveStock(
+    ReserveStockRequest request, ServerCallContext context)
+{
+    // ── LAB: Yapay gecikme — deadline test ──
+    await Task.Delay(3000, context.CancellationToken);  // 3s &gt; 2s deadline
+    // ...
+}</pre>
+          <pre>// Order tarafı — 2s deadline
+var response = await client.ReserveStockAsync(request,
+    deadline: DateTime.UtcNow.AddSeconds(2));</pre>
+          <p>Beklenen davranış: <code>RpcException(StatusCode.DeadlineExceeded)</code>. <strong>Soru:</strong> CancellationToken iptal oldu mu? (Evet — gRPC deadline = CancellationToken. Downstream işlem de durmalı.)</p>
+        </li>
+
+        <!-- LAB 4 -->
+        <li>
+          <strong><span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> Kafka zero-allocation consumer pipeline</strong>
+          <p>Telemetri topic'ine test verisi pompala ve consumer pipeline'ı izle:</p>
+          <pre># Kafka'ya test telemetri verisi gönder (docker exec)
+docker exec -it elp-kafka kafka-console-producer \
+  --bootstrap-server localhost:9092 \
+  --topic telemetry.raw &lt;&lt;'EOF'
+{"device_id":"550e8400-e29b-41d4-a716-446655440001","ts":1729180800000,"lat":40.0150,"lng":29.0100,"speed":72.5,"heading":180.0,"fuel":65.3,"temp":92.1}
+{"device_id":"550e8400-e29b-41d4-a716-446655440002","ts":1729180801000,"lat":40.1832,"lng":28.9784,"speed":55.0,"heading":270.0,"fuel":40.1,"temp":88.7}
+EOF</pre>
+          <p>Consumer loglarında batch processing'i gör:</p>
+          <pre>dotnet run --project src/Services/Telemetry/TelemetryStreamProcessor
+# Log: "Flushed batch of 2 telemetry points in Xms"</pre>
+
+          <h3>Mimari derinlemesine: Neden Channel&lt;T&gt; + ArrayPool?</h3>
+          <div class="mermaid">
+flowchart LR
+  subgraph PollThread["Dedicated Poll Thread<br/>(Task.Factory LongRunning)"]
+    POLL[Kafka.Consume]
+    RENT[ArrayPool.Rent]
+    COPY["Span.CopyTo<br/>(zero-copy parse)"]
+    CHAN[Channel.WriteAsync<br/>★ Back-pressure point]
+  end
+
+  subgraph Workers["N Processor Tasks<br/>(ThreadPool)"]
+    READ[Channel.ReadAllAsync]
+    BULK["Npgsql COPY<br/>(binary protocol)"]
+    RET[ArrayPool.Return]
+  end
+
+  POLL --> RENT --> COPY --> CHAN
+  CHAN -->|bounded| READ
+  READ --> BULK --> RET
+          </div>
+          <p class="muted">Anahtar bilgi: <code>BoundedChannelFullMode.Wait</code> — kanal dolunca Kafka poll durur, consumer lag yükselir, Prometheus alert'i atar. Bu <strong>doğru</strong> davranıştır.</p>
+        </li>
+
+        <!-- LAB 5 -->
+        <li>
+          <strong><span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> GC baskısı karşılaştırma — Anti-pattern vs Golden Code</strong>
+          <p>İki consumer implementasyonunu karşılaştır:</p>
+          <pre>// ❌ ANTI-PATTERN: Her mesajda string allocation
+while (true)
+{
+    var result = consumer.Consume(ct);
+    var json = Encoding.UTF8.GetString(result.Message.Value); // string alloc!
+    var payload = JsonSerializer.Deserialize&lt;TelemetryPayload&gt;(json); // another alloc!
+    await ProcessAsync(payload);
+    consumer.Commit(result);  // sync commit per message — throughput killer
+}</pre>
+          <pre>// ✅ GOLDEN CODE: ArrayPool + Span + Channel batching
+var rented = _pool.Rent(kafkaValue.Length);
+kafkaValue.AsSpan().CopyTo(rented.AsSpan());
+var payload = TelemetryPayload.DeserializeFromUtf8(rented.AsSpan(0, kafkaValue.Length));
+batch.Add(payload);  // batch → Channel → async commit</pre>
+          <p><code>dotnet-counters monitor</code> ile GC koleksiyonlarını karşılaştır:</p>
+          <pre>dotnet-counters monitor --process-id &lt;PID&gt; \
+  --counters System.Runtime[gc-gen0-count,gc-gen1-count,gc-gen2-count,gc-heap-size]</pre>
+        </li>
+
+        <!-- LAB 6 -->
+        <li>
+          <strong><span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> Outbox + Saga: Order → Inventory akışı</strong>
+          <p>Önce altyapıyı ayağa kaldır:</p>
+          <pre>docker compose up -d postgres redis rabbitmq kafka kafka-init
+# EF migration (outbox schema)
+dotnet ef database update --project src/Services/Orchestrator/BackgroundOrchestrator</pre>
+
+          <p>Saga akışını test et — Order Service'ten event publish, Orchestrator'da saga state transition:</p>
+          <pre>// Order.Api — PlaceOrderHandler (outbox publish)
+await _outbox.EnqueueAsync(new OrderPlacedEvent
+{
+    OrderId = order.Id,
+    Sku = "TIRE-205-55-R16",
+    Quantity = 4,
+    CorrelationId = Guid.NewGuid(),
+    OccurredAt = DateTimeOffset.UtcNow
+}, ct);</pre>
+
+          <p>RabbitMQ Management UI'da (<code>http://localhost:15672</code>) mesajın queue'ya düştüğünü gör. Saga state'ini PostgreSQL'den sorgula:</p>
+          <pre>SELECT correlation_id, current_state, order_id, sku, quantity
+FROM outbox.order_saga_states;</pre>
+
+          <div class="mermaid">
+stateDiagram-v2
+  [*] --> Submitted: OrderPlaced
+  Submitted --> Reserved: InventoryReserved
+  Submitted --> Faulted: InventoryReservationFailed
+  Submitted --> Faulted: Timeout (30s)
+  Reserved --> [*]: OrderConfirmed
+  Faulted --> [*]: OrderCancelled (compensate)
+          </div>
+        </li>
+
+        <!-- LAB 7 -->
+        <li>
+          <strong><span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> Redis Cache-Aside + Invalidation canlı test</strong>
+          <p>Cache-aside akışını step-by-step test et:</p>
+          <pre># 1) İlk istek — cache MISS
+curl http://localhost:8082/api/inventory/TIRE-205-55-R16
+# Log: "Cache MISS: inventory:availability:TIRE-205-55-R16"
+
+# 2) İkinci istek — cache HIT
+curl http://localhost:8082/api/inventory/TIRE-205-55-R16
+# Log: "Cache HIT: inventory:availability:TIRE-205-55-R16"
+
+# 3) Redis CLI ile cache'i doğrula
+docker exec -it elp-redis redis-cli GET "inventory:availability:TIRE-205-55-R16"
+
+# 4) Order oluştur → InventoryReservedDomainEvent fires → cache invalidation
+curl -X POST http://localhost:8081/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"sku":"TIRE-205-55-R16","quantity":4}'
+# Log: "Cache invalidation completed: 3 keys for InventoryReservedDomainEvent"
+
+# 5) Tekrar sorgula — cache MISS (fresh data)
+curl http://localhost:8082/api/inventory/TIRE-205-55-R16</pre>
+
+          <h3>Kriz senaryosu: Cache Stampede</h3>
+          <p>50 eş zamanlı istek at ve <code>dotnet-counters</code> ile DB connection pool'u izle:</p>
+          <pre># Terminal 1: Connection pool monitoring
+dotnet-counters monitor --process-id &lt;PID&gt; --counters Npgsql
+
+# Terminal 2: Stampede simülasyonu
+for i in $(seq 1 50); do
+  curl -s http://localhost:8082/api/inventory/TIRE-205-55-R16 &amp;
+done
+wait</pre>
+          <p><strong>Tartışma:</strong> 50 request aynı anda DB'ye gitti mi? Çözüm olarak IDistributedLock (RedLock) eklenebilir — bu Gün 3 lab egzersizi.</p>
+        </li>
+
+        <!-- LAB 8 -->
+        <li>
+          <strong><span class="phase-badge phase-afternoon">ÖĞLEDEN SONRA</span> Entegrasyon testi: Uçtan uca akış</strong>
+          <p>Tüm servisleri ayağa kaldır ve full flow test:</p>
+          <pre>docker compose up -d
+# Wait for all services to be healthy
+docker compose ps
+
+# Full flow:
+# 1. Place order via Gateway
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer &lt;jwt-token&gt;" \
+  -d '{"sku":"TIRE-205-55-R16","quantity":4}'
+
+# 2. Check Jaeger for distributed trace
+open http://localhost:16686
+
+# 3. Check saga state
+psql "postgresql://app:app_secret_change_me@localhost:5432/evolutionary_logistics" \
+  -c "SELECT * FROM outbox.order_saga_states"
+
+# 4. Check Redis cache was invalidated
+docker exec elp-redis redis-cli KEYS "inventory:*"
+
+# 5. Send telemetry data and verify processing
+docker exec -it elp-kafka kafka-console-producer \
+  --bootstrap-server localhost:9092 \
+  --topic telemetry.raw</pre>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         GOTCHA (TUZAK) UYARILARI
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>⚠️ Gotcha (tuzak) uyarıları</h2>
+
+      <div class="gotcha">
+        <strong>Kafka: CooperativeSticky zorunludur</strong>
+        <p>Confluent.Kafka 4.3.1'de <code>PartitionAssignmentStrategy</code> varsayılanı hâlâ <strong>Range</strong>'dir. Range stratejisi her rebalance'da tüm partitionları revoke eder — rolling deploy sırasında mesaj işleme tamamen durur. <code>CooperativeSticky</code> explicit set edilmelidir.</p>
+        <pre>PartitionAssignmentStrategy = PartitionAssignmentStrategy.CooperativeSticky</pre>
+      </div>
+
+      <div class="gotcha">
+        <strong>Kafka: EnableAutoCommit = false + StoreOffset + Commit sırası</strong>
+        <p><code>StoreOffset()</code> sadece "bu offset'i işledim" der, <code>Commit()</code> stored offset'leri Kafka'ya yazar. <code>StoreOffset</code> olmadan <code>Commit</code> çağırırsanız <strong>hiçbir şey commit edilmez</strong> — consumer restart'ta tüm mesajları tekrar işler. Tam tersi: <code>StoreOffset</code> yapıp <code>Commit</code> unuttusanız aynı sonuç.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>ArrayPool&lt;byte&gt;.Return — unutursanız LOH patlar</strong>
+        <p>Pooled buffer'lar <code>ReturnBuffers()</code> ile havuza iade edilmelidir. İade edilmeyen buffer'lar pool'u tüketir; pool bitince yeni allocation GC heap'e düşer. 85KB üzeri buffer'lar LOH'a (Large Object Heap) gider → Gen2 GC fırtınası → p99 latency spike.</p>
+        <pre>// ✅ DOĞRU: finally bloğunda iade
+try { await store.BulkUpsertAsync(batch.Items, ct); }
+finally { batch.ReturnBuffers(); }
+
+// ❌ YANLIŞ: Exception'da iade unutulur
+await store.BulkUpsertAsync(batch.Items, ct);
+batch.ReturnBuffers(); // Exception olursa buraya gelmez!</pre>
+      </div>
+
+      <div class="gotcha">
+        <strong>MassTransit Outbox: EF Core Retry ile çakışma</strong>
+        <p>EF Core'un <code>EnableRetryOnFailure()</code> aktifken MassTransit outbox transaction retry'ı = duplicate mesaj. EF retry'ı SaveChanges'i tekrarlar, ama MassTransit zaten kendi retry'ını yapar. İkisi çakışınca aynı mesaj iki kez outbox'a yazılır. <strong>Çözüm:</strong> EF retry'ı devre dışı bırak, MassTransit retry'ına güven.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>MassTransit: CorrelationId eksikliği = sessiz mesaj kaybı</strong>
+        <p>Saga event correlation'ında <code>CorrelateById</code> kuralı tanımlanmazsa MassTransit mesajı <strong>sessizce drop eder</strong> — hata logu yok, exception yok. Debugging nightmare. Her event'te <code>CorrelationId</code> property'si zorunlu olmalı.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>gRPC Deadline: UTC zorunluluğu</strong>
+        <p><code>CallOptions.Deadline</code> <strong>UTC DateTime</strong> bekler. <code>DateTime.Now.AddSeconds(5)</code> kullanırsanız local time zone farkından dolayı deadline anında expire olabilir (veya 3 saat sonra expire olur — TR: UTC+3). Her zaman <code>DateTime.UtcNow.AddSeconds(5)</code> kullanın.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>Redis KEYS komutu: Production'da yasak</strong>
+        <p>Cache invalidation'da pattern-based temizlik için <code>KEYS inventory:*</code> kullanmayın — O(N) ve Redis'i bloklar. <code>SCAN</code> cursor-based, non-blocking alternatiftir. StackExchange.Redis'te <code>server.KeysAsync(pattern:)</code> SCAN kullanır.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>Channel&lt;T&gt; BoundedChannelFullMode.Wait vs DropOldest</strong>
+        <p><code>Wait</code>: producer (Kafka poll) durur, consumer lag yükselir — <strong>veri kaybı yok</strong>. <code>DropOldest</code>: producer asla bloklanmaz ama eski mesajlar sessizce kaybolur. Telemetri için <code>Wait</code> doğru seçimdir — business-critical olmayan metric verisi için <code>DropOldest</code> düşünülebilir.</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         EĞİTMEN NOTLARI — ZAMAN PLANI
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>📋 Eğitmen notları (zaman planı)</h2>
+      <table>
+        <thead><tr><th>Saat</th><th>Blok</th><th>Not</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>09:00–09:45</td>
+            <td>Trade-off tablosu + Strangler Fig tartışması</td>
+            <td>War Story #1 ile aç. Katılımcı soru: "Monolith'ten ne zaman ayrılmalı?" — Conway's Law bağla</td>
+          </tr>
+          <tr>
+            <td>09:45–10:30</td>
+            <td>Lab 1: YARP route switch</td>
+            <td>Pair programming; header kaybolma senaryosunu canlı göster</td>
+          </tr>
+          <tr>
+            <td>10:45–12:00</td>
+            <td>Lab 2–3: gRPC Interceptor + Deadline</td>
+            <td>Jaeger'da trace inceleme. "Deadline neden UTC?" sorusu — gotcha ile kapat</td>
+          </tr>
+          <tr>
+            <td>12:00–12:30</td>
+            <td>War Story #2: Kafka rebalance</td>
+            <td>Rebalance diyagramı çiz; CooperativeSticky vs Range karşılaştır</td>
+          </tr>
+          <tr>
+            <td>13:30–14:30</td>
+            <td>Lab 4–5: Kafka consumer + GC karşılaştırma</td>
+            <td>dotnet-counters canlı demo. Gen0 farkını ekranda göster</td>
+          </tr>
+          <tr>
+            <td>14:30–15:30</td>
+            <td>Lab 6: Outbox + Saga</td>
+            <td>War Story #3: outbox table bloat. PostgreSQL'de satır sayısını göster</td>
+          </tr>
+          <tr>
+            <td>15:45–16:30</td>
+            <td>Lab 7: Redis Cache-Aside + Invalidation</td>
+            <td>Cache stampede simülasyonu. "Distributed lock eklesek mi?" tartışması</td>
+          </tr>
+          <tr>
+            <td>16:30–17:00</td>
+            <td>Lab 8: Entegrasyon + Retrospektif</td>
+            <td>Gün 3 preview: "Yarın bu pipeline'ın performansını ölçeceğiz — Span&lt;T&gt;, OTEL metrics, Sentry exception tracking"</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         REFERANS: DOSYA HARİTASI
+         ═══════════════════════════════════════════════════════════════════ -->
+    <section>
+      <h2>📁 Gün 2 dosya haritası</h2>
+      <table>
+        <thead><tr><th>Dosya</th><th>Açıklama</th><th>Lab</th></tr></thead>
+        <tbody>
+          <tr><td><code>src/Gateway/ApiGateway/yarp.json</code></td><td>YARP route kuralları — Strangler Fig switch noktası</td><td>Lab 1</td></tr>
+          <tr><td><code>src/BuildingBlocks/Shared.Grpc/Interceptors/</code></td><td>Client + Server interceptor (JWT, trace, deadline)</td><td>Lab 2–3</td></tr>
+          <tr><td><code>src/Services/Telemetry/TelemetryStreamProcessor/Kafka/</code></td><td>KafkaTelemetryConsumer + KafkaConsumerOptions</td><td>Lab 4–5</td></tr>
+          <tr><td><code>src/Services/Telemetry/TelemetryStreamProcessor/Processing/</code></td><td>TelemetryBatchProcessor</td><td>Lab 4–5</td></tr>
+          <tr><td><code>src/Services/Telemetry/TelemetryStreamProcessor/Storage/</code></td><td>NpgsqlTelemetryStore (COPY bulk upsert)</td><td>Lab 4–5</td></tr>
+          <tr><td><code>src/Services/Telemetry/TelemetryStreamProcessor/Models/</code></td><td>TelemetryPayload struct (zero-alloc)</td><td>Lab 4–5</td></tr>
+          <tr><td><code>src/Services/Orchestrator/BackgroundOrchestrator/Persistence/</code></td><td>OutboxDbContext (EF Core + MassTransit tables)</td><td>Lab 6</td></tr>
+          <tr><td><code>src/Services/Orchestrator/BackgroundOrchestrator/Sagas/</code></td><td>OrderFulfillmentSaga state machine</td><td>Lab 6</td></tr>
+          <tr><td><code>src/Services/Orchestrator/BackgroundOrchestrator/Contracts/</code></td><td>Integration event contracts</td><td>Lab 6</td></tr>
+          <tr><td><code>src/BuildingBlocks/Shared.Kernel/Caching/CacheAsideBehavior.cs</code></td><td>MediatR pipeline behavior — Cache-Aside</td><td>Lab 7</td></tr>
+          <tr><td><code>src/BuildingBlocks/Shared.Kernel/Caching/CacheInvalidationHandler.cs</code></td><td>Domain Event → Redis invalidation + Pub/Sub</td><td>Lab 7</td></tr>
+          <tr><td><code>src/Services/Inventory/Inventory.Application/Events/</code></td><td>InventoryReservedDomainEvent (cache keys)</td><td>Lab 7</td></tr>
+          <tr><td><code>src/Services/Inventory/Inventory.Application/Queries/</code></td><td>GetInventoryAvailabilityQuery (ICacheableQuery)</td><td>Lab 7</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+
+  <footer>
+    Evolutionary Logistics Trainer Playbook · Gün 2 · Strangler Fig → Microservices: YARP, gRPC, Kafka, MassTransit Outbox, Redis Cache
+  </footer>
+
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "loose" });
+  </script>
+</body>
+</html>

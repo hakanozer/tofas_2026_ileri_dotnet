@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>EvolutionaryLogistics.Services.Telemetry</RootNamespace>
+    <UserSecretsId>dotnet-TelemetryStreamProcessor-04ddc63e-31a4-4a08-92c2-d297c49b4538</UserSecretsId>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Curriculum target: Confluent.Kafka 4.x — NuGet currently ships 2.16.0 (same ConsumerConfig API surface) -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Include="Confluent.Kafka" Version="2.16.0" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- OTel + Serilog/GELF + Sentry tek yerden: Shared.Observability (Gün 3).
+         Versiyonlar burada tekrar pinlenmez — NU1605 downgrade'i önler. -->
+    <ProjectReference Include="..\..\..\BuildingBlocks\Shared.Observability\Shared.Observability.csproj" />
+  </ItemGroup>
+
+</Project>

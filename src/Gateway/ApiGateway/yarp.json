@@ -1,0 +1,128 @@
+{
+  "ReverseProxy": {
+    "Routes": {
+      "orders-api": {
+        "ClusterId": "order-cluster",
+        "Match": { "Path": "/api/orders/{**catch-all}" },
+        "Transforms": [
+          { "PathRemovePrefix": "/api/orders" },
+          { "RequestHeaderOriginalHost": "true" },
+          { "RequestHeader": "X-Gateway-Route", "Set": "orders-api" },
+          { "RequestHeader": "X-Forwarded-Prefix", "Set": "/api/orders" }
+        ],
+        "Metadata": {
+          "RateLimitPolicy": "write-heavy",
+          "AuthRequired": "true"
+        }
+      },
+      "orders-read": {
+        "ClusterId": "order-cluster",
+        "Match": { "Path": "/api/read/orders/{**catch-all}" },
+        "Transforms": [
+          { "PathRemovePrefix": "/api/read/orders" },
+          { "PathPrefix": "/read" },
+          { "RequestHeader": "X-Gateway-Route", "Set": "orders-read" }
+        ],
+        "Metadata": {
+          "RateLimitPolicy": "read-heavy",
+          "AuthRequired": "true"
+        }
+      },
+      "inventory-api": {
+        "ClusterId": "inventory-cluster",
+        "Match": { "Path": "/api/inventory/{**catch-all}" },
+        "Transforms": [
+          { "PathRemovePrefix": "/api/inventory" },
+          { "RequestHeader": "X-Gateway-Route", "Set": "inventory-api" }
+        ],
+        "Metadata": {
+          "RateLimitPolicy": "read-heavy",
+          "AuthRequired": "true"
+        }
+      },
+      "inventory-grpc-bridge": {
+        "ClusterId": "inventory-cluster",
+        "Match": { "Path": "/grpc/inventory/{**catch-all}" },
+        "Transforms": [
+          { "PathRemovePrefix": "/grpc/inventory" },
+          { "RequestHeader": "X-Gateway-Route", "Set": "inventory-grpc-bridge" }
+        ],
+        "Metadata": {
+          "RateLimitPolicy": "write-heavy",
+          "AuthRequired": "true"
+        }
+      },
+      "ai-api": {
+        "ClusterId": "ai-cluster",
+        "Match": { "Path": "/api/ai/{**catch-all}" },
+        "Transforms": [
+          { "PathRemovePrefix": "/api/ai" },
+          { "RequestHeader": "X-Gateway-Route", "Set": "ai-api" },
+          { "RequestHeader": "X-LLM-Gateway", "Set": "enabled" }
+        ],
+        "Metadata": {
+          "RateLimitPolicy": "ai-token-budget",
+          "AuthRequired": "true"
+        }
+      },
+      "health-aggregate": {
+        "ClusterId": "order-cluster",
+        "Match": { "Path": "/health/{**catch-all}" },
+        "Transforms": [
+          { "PathRemovePrefix": "/health" }
+        ],
+        "Metadata": {
+          "RateLimitPolicy": "anonymous-burst",
+          "AuthRequired": "false"
+        }
+      }
+    },
+    "Clusters": {
+      "order-cluster": {
+        "LoadBalancingPolicy": "PowerOfTwoChoices",
+        "HealthCheck": {
+          "Active": {
+            "Enabled": true,
+            "Interval": "00:00:10",
+            "Timeout": "00:00:03",
+            "Policy": "ConsecutiveFailures",
+            "Path": "/health"
+          }
+        },
+        "Destinations": {
+          "order-primary": { "Address": "http://order-service:8081/" },
+          "order-shadow": { "Address": "http://order-service:8081/" }
+        },
+        "HttpRequest": {
+          "Version": "2.0",
+          "VersionPolicy": "RequestVersionOrLower"
+        },
+        "Metadata": {
+          "CircuitBreakerThreshold": "5"
+        }
+      },
+      "inventory-cluster": {
+        "LoadBalancingPolicy": "RoundRobin",
+        "HealthCheck": {
+          "Passive": {
+            "Enabled": true,
+            "ReactivationPeriod": "00:01:00"
+          }
+        },
+        "Destinations": {
+          "inventory-a": { "Address": "http://inventory-service:8082/" },
+          "inventory-b": { "Address": "http://inventory-service:8082/" }
+        }
+      },
+      "ai-cluster": {
+        "LoadBalancingPolicy": "LeastRequests",
+        "Destinations": {
+          "ai-primary": { "Address": "http://ai-mcp-server:8083/" }
+        },
+        "HttpRequest": {
+          "ActivityTimeout": "00:02:00"
+        }
+      }
+    }
+  }
+}

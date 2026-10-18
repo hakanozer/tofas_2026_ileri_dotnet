@@ -1,0 +1,34 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/BuildingBlocks/">
+    <Project Path="src/BuildingBlocks/Shared.Grpc/Shared.Grpc.csproj" />
+    <Project Path="src/BuildingBlocks/Shared.Kernel/Shared.Kernel.csproj" />
+    <Project Path="src/BuildingBlocks/Shared.Observability/Shared.Observability.csproj" />
+  </Folder>
+  <Folder Name="/src/Gateway/">
+    <Project Path="src/Gateway/ApiGateway/ApiGateway.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/" />
+  <Folder Name="/src/Services/AI/">
+    <Project Path="src/Services/AI/AiMcpServer/AiMcpServer.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Inventory/">
+    <Project Path="src/Services/Inventory/Inventory.Api/Inventory.Api.csproj" />
+    <Project Path="src/Services/Inventory/Inventory.Application/Inventory.Application.csproj" />
+    <Project Path="src/Services/Inventory/Inventory.Domain/Inventory.Domain.csproj" />
+    <Project Path="src/Services/Inventory/Inventory.Infrastructure/Inventory.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Orchestrator/">
+    <Project Path="src/Services/Orchestrator/BackgroundOrchestrator/BackgroundOrchestrator.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Order/">
+    <Project Path="src/Services/Order/Order.Api/Order.Api.csproj" />
+    <Project Path="src/Services/Order/Order.Application/Order.Application.csproj" />
+    <Project Path="src/Services/Order/Order.Contracts/Order.Contracts.csproj" />
+    <Project Path="src/Services/Order/Order.Domain/Order.Domain.csproj" />
+    <Project Path="src/Services/Order/Order.Infrastructure/Order.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Telemetry/">
+    <Project Path="src/Services/Telemetry/TelemetryStreamProcessor/TelemetryStreamProcessor.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gün 1 — Modüler Monolith, Event Sourcing &amp; CQRS | Eğitmen Playbook</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --text: #e7ecf3;
+      --muted: #9aa8bc;
+      --accent: #3d8bfd;
+      --accent2: #6ee7b7;
+      --warn: #fbbf24;
+      --danger: #f87171;
+      --border: #334155;
+      --font: "Segoe UI", "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+    header {
+      background: linear-gradient(135deg, #1e3a5f 0%, #0f1419 60%);
+      border-bottom: 1px solid var(--border);
+      padding: 2rem 2.5rem;
+    }
+    header h1 { margin: 0 0 0.35rem; font-size: 1.75rem; font-weight: 600; }
+    header p { margin: 0; color: var(--muted); max-width: 52rem; }
+    main { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 1.5rem;
+    }
+    h2 {
+      font-size: 1.25rem;
+      margin: 0 0 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    h3 { font-size: 1.05rem; color: var(--accent2); margin-top: 1.25rem; }
+    p, li { color: var(--text); }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin: 1rem 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.65rem 0.75rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--surface2); color: var(--accent2); font-weight: 600; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    .tag {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      background: var(--surface2);
+      color: var(--warn);
+      border: 1px solid var(--border);
+    }
+    pre, code {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+    }
+    pre {
+      background: #0a0e14;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.15rem;
+      overflow-x: auto;
+      line-height: 1.45;
+    }
+    code { color: #a5d6ff; }
+    .war {
+      border-left: 4px solid var(--danger);
+      padding-left: 1rem;
+      margin: 1rem 0;
+    }
+    .gotcha {
+      background: rgba(251, 191, 36, 0.08);
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      border-radius: 8px;
+      padding: 1rem 1.15rem;
+      margin: 0.75rem 0;
+    }
+    .gotcha strong { color: var(--warn); }
+    ol.lab { counter-reset: lab; list-style: none; padding: 0; }
+    ol.lab li {
+      counter-increment: lab;
+      margin-bottom: 1.25rem;
+      padding-left: 2.5rem;
+      position: relative;
+    }
+    ol.lab li::before {
+      content: counter(lab);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1.75rem;
+      height: 1.75rem;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 50%;
+      font-size: 0.8rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .mermaid { background: var(--surface2); border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 2rem;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="tag">Evolutionary Logistics &amp; Telemetry Platform · Gün 1 / 8 saat</p>
+    <h1>Modüler Monolith → Event Sourcing &amp; CQRS</h1>
+    <p>Order &amp; Inventory bounded context’leri; fiziksel modül sınırları, aggregate tasarımı, event store (PostgreSQL 18.6), CQRS read model projeksiyonları. <strong>Giriş seviyesi DDD anlatımı yok</strong> — odak: tutarlılık sınırları, concurrency ve operasyonel gerçeklik.</p>
+  </header>
+
+  <main>
+    <section>
+      <h2>🧭 Günün hedefleri</h2>
+      <ul>
+        <li><code>orders</code> / <code>inventory</code> şemalarında modüler monolith iskeletini çalıştırmak (<code>docker compose</code> + solution yapısı).</li>
+        <li>Order aggregate için append-only event stream + optimistic concurrency (version).</li>
+        <li>MediatR ile command/query ayrımı; read model projeksiyonunun eventual consistency sınırlarını ölçmek.</li>
+        <li>gRPC pipeline’ı (FAZ 2) ile correlation / JWT claim taşıma konseptini Inventory tarafına bağlamak.</li>
+      </ul>
+      <div class="mermaid">
+flowchart LR
+  subgraph Monolith["Modüler Monolith (Gün 1)"]
+    API[Order.Api REST]
+    CMD[Commands / MediatR]
+    AGG[Order Aggregate]
+    ES[(PostgreSQL orders.events)]
+    RM[(Read Models)]
+  end
+  API --> CMD --> AGG --> ES
+  ES -->|projeksiyon| RM
+  CMD -->|integration intent| INV[Inventory Module - sync stub]
+      </div>
+    </section>
+
+    <section>
+      <h2>🧠 Mimari karar &amp; trade-off tablosu</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Karar</th>
+            <th>Seçilen</th>
+            <th>Alternatif</th>
+            <th>Neden?</th>
+            <th>Bedel (trade-off)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Yazma modeli</td>
+            <td>Event Sourcing (PostgreSQL append-only)</td>
+            <td>CRUD + audit tablosu</td>
+            <td>Sipariş yaşam döngüsü geri alınabilir; CDC/Kafka (Gün 2) için doğal kaynak</td>
+            <td>Storage büyür; projeksiyon lag; operasyonel karmaşıklık</td>
+          </tr>
+          <tr>
+            <td>Okuma modeli</td>
+            <td>CQRS — ayrı tablolar / Dapper veya EF split query</td>
+            <td>Single model EF</td>
+            <td>Read path’te join patlamasını önler; SLA farklılaştırır</td>
+            <td>Stale read; invalidation disiplini (Gün 3 Redis)</td>
+          </tr>
+          <tr>
+            <td>BC fiziksel ayrım</td>
+            <td>Aynı DB, ayrı schema + ayrı .csproj</td>
+            <td>Erken microservice</td>
+            <td>Strangler Fig (Gün 2) için modül sınırları hazır; tek transaction hâlâ mümkün (kısa pencere)</td>
+            <td>“Distributed monolith” riski — disiplin şart</td>
+          </tr>
+          <tr>
+            <td>Concurrency</td>
+            <td>Stream version + <code>DbUpdateConcurrencyException</code></td>
+            <td>Pessimistic lock</td>
+            <td>Yüksek throughput; lock contention yok</td>
+            <td>Retry storm — idempotent command zorunlu</td>
+          </tr>
+          <tr>
+            <td>Cross-context çağrı (Gün 1)</td>
+            <td>In-process interface + domain event</td>
+            <td>gRPC (Gün 2)</td>
+            <td>Monolith fazında en düşük latency</td>
+            <td>Yarın extract ederken interface → contract</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>💥 Savaş hikayesi (War Story)</h2>
+      <div class="war">
+        <p><strong>Senaryo:</strong> Avrupa’daki bir filo operasyon platformunda “Black Friday” gecesi <code>PlaceOrder</code> komutu 40k/dk’ya çıktı. Event store’a paralel yazım doğruydu; ancak read model projeksiyonu <strong>tek thread MediatR notification</strong> ile çalışıyordu. Dashboard stok “0” gösterirken aggregate hâlâ rezerve ediyordu — operasyon ekibi aynı SKU için manuel sipariş açtı ve <strong>oversell</strong> oluştu.</p>
+        <p><strong>Kök neden:</strong> CQRS’te write path ile read path SLA’ları karıştırıldı; projeksiyon lag metriklenmedi; concurrency retry’ları <code>OrderPlaced</code> event’ini çift publish etti (idempotency key yoktu).</p>
+        <p><strong>Çözüm:</strong> (1) Projeksiyonları channel tabanlı worker’a taşıdık, (2) <code>CommandId</code> ile idempotent handler, (3) Grafana’da <code>projection_lag_seconds</code> alert, (4) müşariyüzde “stale read” banner + version token. Gün 1 lab’ında katılımcılar aynı hatayı <strong>kasıtlı</strong> tekrarlar, sonra (1)+(2) ile düzeltir.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>💻 Hands-on lab adımları</h2>
+      <p class="muted">Süre: ~4 saat kod + 1 saat tartışma. Repo kökü: <code>tofas_2026_ileri_dotnet</code>.</p>
+
+      <ol class="lab">
+        <li>
+          <strong>Altyapıyı ayağa kaldır</strong>
+          <pre>docker compose up -d postgres redis jaeger otel-collector
+docker compose ps
+psql "postgresql://app:app_secret_change_me@localhost:5432/evolutionary_logistics" -c "\dn"</pre>
+          <p><code>orders</code> ve <code>inventory</code> şemalarını doğrula. Graylog/OpenSearch RAM tüketir — laptop’ta sadece ihtiyaç halinde <code>graylog</code> profilini aç.</p>
+        </li>
+        <li>
+          <strong>Solution haritasını incele</strong>
+          <p><code>docs/ARCHITECTURE.md</code> — Order BC: Domain → Application → Infrastructure → Api. Inventory aynı dilim; cross-reference yok (interface ile).</p>
+        </li>
+        <li>
+          <strong>Kriz senaryosu: çift event publish</strong>
+          <p>Order.Application içinde placeholder <code>PlaceOrderCommandHandler</code> yazılırken <code>CommandId</code> olmadan retry simüle edin:</p>
+          <pre>// Anti-pattern (lab A) — katılımcıya dağıt
+public async Task Handle(PlaceOrderCommand cmd, CancellationToken ct)
+{
+    var order = OrderAggregate.Place(cmd.Sku, cmd.Qty);
+    await _store.AppendAsync(order, ct);           // v1
+    await _projector.ProjectAsync(order, ct);      // sync projeksiyon — bottleneck
+    await _bus.PublishAsync(new OrderPlaced(...)); // retry'da duplicate
+}</pre>
+          <p>Projeksiyon gecikmesini görmek için <code>await Task.Delay(200)</code> ekleyin; eşzamanlı 50 istek atın.</p>
+        </li>
+        <li>
+          <strong>Çözüm kodu: idempotency + async projeksiyon intent</strong>
+          <pre>public sealed record PlaceOrderCommand(Guid CommandId, string Sku, int Qty) : IRequest&lt;Guid&gt;;
+
+public async Task&lt;Guid&gt; Handle(PlaceOrderCommand cmd, CancellationToken ct)
+{
+    if (await _idempotency.ExistsAsync(cmd.CommandId, ct))
+        return await _idempotency.GetResultAsync(cmd.CommandId, ct);
+
+    var stream = await _store.LoadAsync(cmd.Sku, ct);
+    stream.PlaceOrder(cmd.Qty);
+    await _store.SaveAsync(stream, expectedVersion: stream.Version, ct);
+
+    await _idempotency.SaveAsync(cmd.CommandId, stream.Id, ct);
+    await _outbox.EnqueueAsync(new OrderPlacedV1(stream.Id, cmd.Sku, cmd.Qty), ct);
+    return stream.Id;
+}</pre>
+          <p>Outbox tablosu Gün 2’de MassTransit ile tüketilecek; Gün 1’de yalnızca schema + enqueue yeterli.</p>
+        </li>
+        <li>
+          <strong>Event store şeması (PostgreSQL 18.6)</strong>
+          <pre>CREATE TABLE orders.events (
+  stream_id   uuid NOT NULL,
+  version     int  NOT NULL,
+  event_type  text NOT NULL,
+  payload     jsonb NOT NULL,
+  metadata    jsonb NOT NULL,
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (stream_id, version)
+);
+CREATE INDEX ix_orders_events_type ON orders.events (event_type);</pre>
+        </li>
+        <li>
+          <strong>gRPC pipeline bağlantısı (hazır kod)</strong>
+          <p>Inventory.Api: <code>AddEvolutionaryGrpcServerPipeline()</code> — JWT parse, traceparent, deadline metadata. Gün 1’de REST ağırlıklı; katılımcılar <code>Shared.Grpc</code> interceptor’ını okuyup REST gateway’deki header’larla eşleştirir:</p>
+          <pre>// Gateway → downstream (yarp.json transform + middleware)
+// x-correlation-id, x-tenant-id, x-user-id</pre>
+        </li>
+        <li>
+          <strong>Derleme</strong>
+          <pre>dotnet build EvolutionaryLogistics.slnx
+dotnet run --project src/Services/Order/Order.Api</pre>
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>⚠️ Gotcha (tuzak) uyarıları</h2>
+
+      <div class="gotcha">
+        <strong>.NET 10 JIT &amp; field-backed properties (C# 14)</strong>
+        <p>Aggregate’lerde <code>field</code> backed property kullanırken constructor + event rehydration aynı field’ı doldurmalı. Aksi halde JIT inline optimizasyonları debug/release farklı davranış gösterebilir — event sourcing testlerinizi <strong>Release</strong> configuration’da koşturun.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>EF Core 10 split query</strong>
+        <p>Read model’de çoklu collection include kullanıyorsanız <code>AsSplitQuery()</code> varsayılan stratejiniz olsun; tek query cartesian explosion ile PostgreSQL temp file açar — latency değil, <strong>disk I/O</strong> patlar.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>Event store “upsert” anti-pattern</strong>
+        <p><code>ON CONFLICT DO UPDATE</code> event satırında kullanılmaz. Version PK ihlali concurrency sinyalidir — swallow etmeyin.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>Modüler monolith → dağıtık transaction hayali</strong>
+        <p>Order + Inventory aynı PostgreSQL instance’ında iki schema olsa bile, Gün 2’de servis ayrılınca 2PC geri gelmez. Gün 1’den itibaren <strong>saga / outbox</strong> dilini kullanın.</p>
+      </div>
+
+      <div class="gotcha">
+        <strong>Span&lt;T&gt; (Gün 3 önizleme)</strong>
+        <p>Gün 1’de string event payload’larında <code>ReadOnlySpan&lt;char&gt;</code> ile JSON parse denemeyin — UTF-16 string backing ile ref struct sınırları ihlal edilir. Telemetry lab’ında (Gün 3) byte[] / <code>ReadOnlyMemory&lt;byte&gt;</code> pipeline gösterilecek.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>📋 Eğitmen notları (zaman planı)</h2>
+      <table>
+        <thead><tr><th>Saat</th><th>Blok</th><th>Not</th></tr></thead>
+        <tbody>
+          <tr><td>09:00–10:30</td><td>Trade-off tablosu + mimari diyagram</td><td>Katılımcı anket: “CRUD yeterli mi?” — war story ile kapat</td></tr>
+          <tr><td>10:45–12:30</td><td>Lab 1–3 (infra + anti-pattern)</td><td>Pair programming; duplicate event göster</td></tr>
+          <tr><td>13:30–15:00</td><td>Lab 4–5 (idempotency + schema)</td><td>EF vs raw Npgsql tartışması</td></tr>
+          <tr><td>15:15–17:00</td><td>gRPC pipeline walkthrough + retrospektif</td><td>Gün 2 Strangler homework: Inventory extract checklist</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    Evolutionary Logistics Trainer Playbook · Gün 1 · Repo: docker-compose.yml, EvolutionaryLogistics.slnx, src/BuildingBlocks/Shared.Grpc
+  </footer>
+
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "loose" });
+  </script>
+</body>
+</html>

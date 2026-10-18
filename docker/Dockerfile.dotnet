@@ -1,0 +1,16 @@
+# Shared multi-stage build for .NET 10 training services
+ARG PROJECT_PATH
+FROM mcr.microsoft.com/dotnet/sdk:10.0.402 AS build
+WORKDIR /src
+COPY Directory.Build.props ./
+COPY EvolutionaryLogistics.slnx ./
+COPY src/ ./src/
+ARG PROJECT_PATH
+RUN dotnet restore "$PROJECT_PATH"
+RUN dotnet publish "$PROJECT_PATH" -c Release -o /app/publish /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.402 AS final
+WORKDIR /app
+COPY --from=build /app/publish .
+ENV ASPNETCORE_URLS=http://+:8080
+ENTRYPOINT ["dotnet"]

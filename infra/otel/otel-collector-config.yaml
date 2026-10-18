@@ -1,0 +1,58 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+
+  # ── Gün 3 Lab 6: Tail sampling ──────────────────────────────────────────────
+  # SDK tarafındaki head sampling (ParentBased+%10) ucuz ama hatalı trace'i
+  # kaçırabilir. Collector tüm span'leri decision_wait boyunca bellekte tutar ve
+  # kurala uyanı DAİMA saklar. Prod'da ikisi birlikte kullanılır.
+  # MALİYET/GOTCHA: decision_wait × span hacmi = collector RAM. Yüksek trafikte
+  # num_traces / expected_new_traces_per_sec ile sınırlayın, aksi halde OOM.
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 100000
+    policies:
+      - name: errors-always
+        type: status_code
+        status_code: { status_codes: [ERROR] }
+      - name: slow-traces
+        type: latency
+        latency: { threshold_ms: 500 }
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # Metrics → Prometheus scrape endpoint (:8889). OTLP push yerine pull modeli.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      # Sıra önemli: tail_sampling önce karar verir, batch sonra gönderir.
+      receivers: [otlp]
+      processors: [tail_sampling, batch]
+      exporters: [otlp/jaeger, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus, debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

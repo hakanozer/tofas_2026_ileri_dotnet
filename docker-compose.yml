@@ -1,0 +1,338 @@
+# Evolutionary Logistics & Telemetry Platform — local training stack
+# Versions pinned per curriculum: PostgreSQL 18.6, Redis 8.10.2, Confluent Kafka 7.x, .NET 10 apps
+
+name: evolutionary-logistics
+
+x-dotnet-env: &dotnet-env
+  ASPNETCORE_ENVIRONMENT: Development
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  OTEL_SERVICE_NAMESPACE: evolutionary-logistics
+  ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=evolutionary_logistics;Username=app;Password=app_secret_change_me
+  ConnectionStrings__Redis: redis:6379,abortConnect=false
+  Kafka__BootstrapServers: kafka:9092
+  RabbitMQ__Host: rabbitmq
+  RabbitMQ__Username: logistics
+  RabbitMQ__Password: logistics_secret
+  Sentry__Dsn: http://public@relay:3000/1
+  # Serilog GELF sink (Gün 3 Lab 7). NOT: Graylog'da bir "GELF UDP" input
+  # (port 12201) tanımlanmalı, aksi halde loglar düşer.
+  Graylog__Endpoint: udp://graylog:12201
+
+services:
+  # ─── Data stores ───────────────────────────────────────────────────────────
+  postgres:
+    # pgvector image: PostgreSQL 18 + `vector` extension ÖNDEN KURULU.
+    # GOTCHA: stock postgres:18-alpine'da `CREATE EXTENSION vector` başarısız olur
+    # ("extension \"vector\" is not available") — RAG bu yüzden sessizce boş döner.
+    image: pgvector/pgvector:pg18
+    container_name: elp-postgres
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app_secret_change_me
+      POSTGRES_DB: evolutionary_logistics
+    ports:
+      # 5432: konteynerler arası ve host için varsayılan yol.
+      # 5433: host'ta başka bir PostgreSQL (örn. Homebrew) 5432'yi dinliyorsa
+      #       dev-local.sh bu portu kullanarak Docker'daki postgres'e bağlanır.
+      - "5432:5432"
+      - "5433:5432"
+    volumes:
+      # GOTCHA (PostgreSQL 18+): tek mount /var/lib/postgresql olmalı.
+      # Eski "/var/lib/postgresql/data" mount'u 18+ imajını "exited(1)" ile düşürür:
+      # "there appears to be PostgreSQL data in: /var/lib/postgresql/data (unused mount)".
+      # Veri artık sürüme özel alt dizinde tutulur: /var/lib/postgresql/18/docker
+      - postgres_data:/var/lib/postgresql
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d evolutionary_logistics"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8.10.2-alpine
+    container_name: elp-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ─── Kafka (KRaft, single broker — training only) ───────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.8.0
+    container_name: elp-kafka
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+    ports:
+      - "29092:29092"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.8.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic telemetry.raw --partitions 6 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic logistics.cdc.orders --partitions 3 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic logistics.cdc.inventory --partitions 3 --replication-factor 1
+        echo "Kafka topics ready"
+
+  # ─── RabbitMQ (MassTransit / Outbox — Day 2+) ────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: elp-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: logistics
+      RABBITMQ_DEFAULT_PASS: logistics_secret
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # ─── Observability ─────────────────────────────────────────────────────────
+  jaeger:
+    # GOTCHA: Jaeger v1 imajları tam sürüm numarasıyla etiketlenir ("1.64" DEĞİL,
+    # "1.64.0"). "1.64" yazarsanız: "failed to resolve reference ... not found".
+    image: jaegertracing/all-in-one:1.64.0
+    container_name: elp-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.119.0
+    container_name: elp-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./infra/otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    depends_on:
+      - jaeger
+    ports:
+      - "4319:4317"
+      - "4320:4318"
+      - "8889:8889"   # Prometheus exporter (metrics scrape)
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: elp-prometheus
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: elp-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+  # Graylog 6.x (OpenSearch + MongoDB sidecars)
+  mongo:
+    image: mongo:7.0
+    container_name: elp-mongo
+    volumes:
+      - mongo_data:/data/db
+
+  opensearch:
+    image: opensearchproject/opensearch:2.19.0
+    container_name: elp-opensearch
+    environment:
+      discovery.type: single-node
+      # GOTCHA: OpenSearch >= 2.12 entrypoint'i, admin parolası verilmezse
+      # "No custom admin password found ... the setup will quit" deyip exited(1) ile düşer.
+      # Eğitim ortamında security'yi tamamen kapatıyoruz (Graylog kimliksiz bağlanır):
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+      bootstrap.memory_lock: "true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+
+  graylog:
+    image: graylog/graylog:6.1
+    container_name: elp-graylog
+    depends_on:
+      - mongo
+      - opensearch
+    environment:
+      GRAYLOG_PASSWORD_SECRET: somepasswordpepperatleast16chars
+      GRAYLOG_ROOT_PASSWORD_SHA2: 8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+      GRAYLOG_HTTP_EXTERNAL_URI: http://127.0.0.1:9000/
+      GRAYLOG_ELASTICSEARCH_HOSTS: http://opensearch:9200
+      GRAYLOG_MONGODB_URI: mongodb://mongo:27017/graylog
+    ports:
+      - "9000:9000"
+      - "12201:12201/udp"
+      - "1514:1514/udp"
+
+  # Sentry Relay — accepts SDK events in dev (no full Sentry stack)
+  relay:
+    image: getsentry/relay:24.11.0
+    container_name: elp-sentry-relay
+    ports:
+      - "3000:3000"
+    environment:
+      RELAY_MODE: managed
+
+  # ─── .NET applications (built from repo) ───────────────────────────────────
+  api-gateway:
+    build:
+      context: .
+      dockerfile: src/Gateway/ApiGateway/Dockerfile
+    container_name: elp-api-gateway
+    environment:
+      <<: *dotnet-env
+      OTEL_SERVICE_NAME: api-gateway
+      ReverseProxy__ConfigPath: /app/yarp.json
+      Jwt__Authority: https://login.example.com/realms/logistics
+      Jwt__Audience: logistics-api
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./src/Gateway/ApiGateway/yarp.json:/app/yarp.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
+  order-service:
+    build:
+      context: .
+      dockerfile: src/Services/Order/Order.Api/Dockerfile
+    container_name: elp-order-service
+    environment:
+      <<: *dotnet-env
+      OTEL_SERVICE_NAME: order-service
+      ASPNETCORE_URLS: http://+:8081
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: src/Services/Inventory/Inventory.Api/Dockerfile
+    container_name: elp-inventory-service
+    environment:
+      <<: *dotnet-env
+      OTEL_SERVICE_NAME: inventory-service
+      ASPNETCORE_URLS: http://+:8082
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  telemetry-processor:
+    build:
+      context: .
+      dockerfile: src/Services/Telemetry/TelemetryStreamProcessor/Dockerfile
+    container_name: elp-telemetry-processor
+    environment:
+      <<: *dotnet-env
+      OTEL_SERVICE_NAME: telemetry-stream-processor
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+
+  background-orchestrator:
+    build:
+      context: .
+      dockerfile: src/Services/Orchestrator/BackgroundOrchestrator/Dockerfile
+    container_name: elp-background-orchestrator
+    environment:
+      <<: *dotnet-env
+      OTEL_SERVICE_NAME: background-orchestrator
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  ai-mcp-server:
+    build:
+      context: .
+      dockerfile: src/Services/AI/AiMcpServer/Dockerfile
+    container_name: elp-ai-mcp-server
+    environment:
+      <<: *dotnet-env
+      OTEL_SERVICE_NAME: ai-mcp-server
+      ASPNETCORE_URLS: http://+:8083
+      # Gün 4: LLM sağlayıcısı. OpenAI-compatible endpoint (Ollama/vLLM) için AI__Endpoint verin.
+      # AI__ApiKey boşsa /api/assistant/ask 503 döner — servis ayakta kalır, uydurmaz.
+      AI__ChatModel: ${AI_CHAT_MODEL:-gpt-4o-mini}
+      AI__EmbeddingModel: ${AI_EMBEDDING_MODEL:-text-embedding-3-small}
+      AI__ApiKey: ${AI_API_KEY:-}
+      AI__Endpoint: ${AI_ENDPOINT:-}
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  mongo_data:
+  opensearch_data:
