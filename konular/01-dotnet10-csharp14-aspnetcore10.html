@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content=".NET 10, C# 14 ve ASP.NET Core 10 için kurumsal platform dersi">
+  <title>01 · .NET 10, C# 14 ve ASP.NET Core 10</title>
+  <link rel="stylesheet" href="egitim.css">
+</head>
+<body>
+<header>
+  <div class="eyebrow">Kurumsal .NET · Oturum 01</div>
+  <h1>.NET 10, C# 14 ve ASP.NET Core 10</h1>
+  <p>Platform sürümünü hedef framework, SDK, runtime ve dil sürümünden ayırarak ele alın. Katılımcı, üretimde hangi bileşenin güncellendiğini ve neden yalnızca derlemenin yeterli kanıt olmadığını kavrasın.</p>
+  <div class="meta"><span class="pill">Hedef: .NET uzmanları</span><span class="pill">Örnek repo: net10.0 / C# 14</span></div>
+</header>
+<main class="layout">
+<article>
+  <section id="hedef">
+    <h2>Dersin hedefi ve akışı</h2>
+    <p>Önce platform parçalarını ayırt edin; sonra C# 14 yeniliklerinin kod okunabilirliğine etkisini ve ASP.NET Core uygulamasının host/pipeline yaşam döngüsünü tartışın. Son bölümde bu depodaki sürüm seçimini okuyup bir sürüm yükseltmesinin gerçek kapsamını çıkarın.</p>
+    <div class="flow">SDK → restore/build → uygulama çıktısı → .NET Runtime + ASP.NET Core Shared Framework → işletim sistemi / container</div>
+    <ol><li>TFM, SDK ve runtime ayrımı</li><li>C# 14: yeni söz dizimi, derleyici ve uyumluluk</li><li>ASP.NET Core host, middleware ve endpoint yaşam döngüsü</li><li>Repo üzerinden sürüm ve deployment kararı</li><li>Tartışma ve geçiş kontrol listesi</li></ol>
+  </section>
+  <section id="platform">
+    <h2>Platform katmanlarını birbirine karıştırmayın</h2>
+    <p><code>net10.0</code>, <strong>TFM (Target Framework Moniker: hedef framework'ü ve kullanılabilir API yüzeyini tanımlayan kısa ad)</strong> değeridir; derleme sırasında hangi framework API'lerinin kullanılacağını belirtir. <strong>.NET SDK (Software Development Kit: derleyici, MSBuild ve CLI araçları)</strong> restore/build/publish yapar; <strong>.NET Runtime (çalışma zamanı: uygulamanın IL kodunu çalıştıran JIT, GC ve temel kütüphaneler)</strong> uygulamayı çalıştırır. <strong>ASP.NET Core Shared Framework (ASP.NET Core çalışma zamanı bileşenleri)</strong> web uygulamasının hosting, middleware ve HTTP altyapısını sunar.</p>
+    <p><strong>Framework-dependent deployment (hedef makinede .NET Runtime kurulu olmasını gerektiren dağıtım)</strong> genellikle küçük uygulama çıktısı üretir; container/host imajında uygun runtime bulunmalı ve runtime patch'i host sahibi tarafından güncel tutulmalıdır. <strong>Self-contained deployment (uygulama ile seçilen .NET Runtime'ı birlikte yayımlayan dağıtım)</strong> host'a önceden runtime kurulumu gerektirmez; fakat her işletim sistemi/CPU için doğru <strong>RID (Runtime Identifier: ör. linux-arm64 gibi yayın hedefi)</strong> seçilmeli, runtime güvenlik güncellemesi uygulama yeniden publish edilerek alınmalıdır. İkisi de tek başına Native AOT değildir; AOT ayrı bir yayın tercihi ve uyumluluk testidir.</p>
+    <figure aria-labelledby="deploy-caption">
+      <svg viewBox="0 0 920 205" role="img" aria-labelledby="deploy-title deploy-desc">
+        <title id="deploy-title">Build ve dağıtım bileşenleri</title>
+        <desc id="deploy-desc">SDK uygulamayı derler. Framework-dependent uygulama host runtime'ını kullanır; self-contained çıktıda runtime uygulamayla dağıtılır.</desc>
+        <defs><marker id="arrow-platform" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#52749d"/></marker></defs>
+        <rect x="24" y="55" width="190" height="90" rx="14" fill="#eaf2ff" stroke="#7fa5dc" stroke-width="2"/>
+        <text x="119" y="87" text-anchor="middle" font-weight="700" font-size="17" fill="#17243a">.NET SDK</text>
+        <text x="119" y="112" text-anchor="middle" font-size="13" fill="#52647c">compiler + MSBuild</text>
+        <text x="119" y="131" text-anchor="middle" font-size="13" fill="#52647c">TFM: net10.0</text>
+        <path d="M214 100 H330" stroke="#52749d" stroke-width="3" marker-end="url(#arrow-platform)"/>
+        <rect x="342" y="55" width="220" height="90" rx="14" fill="#f5f8fc" stroke="#9bacc2" stroke-width="2"/>
+        <text x="452" y="87" text-anchor="middle" font-weight="700" font-size="17" fill="#17243a">Uygulama çıktısı</text>
+        <text x="452" y="112" text-anchor="middle" font-size="13" fill="#52647c">IL + bağımlılıklar</text>
+        <text x="452" y="131" text-anchor="middle" font-size="13" fill="#52647c">publish biçimi seçilir</text>
+        <path d="M562 100 H660 V52 H690" fill="none" stroke="#52749d" stroke-width="3" marker-end="url(#arrow-platform)"/>
+        <path d="M562 100 H660 V158 H690" fill="none" stroke="#52749d" stroke-width="3" marker-end="url(#arrow-platform)"/>
+        <rect x="702" y="20" width="196" height="72" rx="12" fill="#e9f7f2" stroke="#75b99e" stroke-width="2"/>
+        <text x="800" y="49" text-anchor="middle" font-weight="700" font-size="15" fill="#17243a">Framework-dependent</text>
+        <text x="800" y="72" text-anchor="middle" font-size="12" fill="#52647c">host runtime sağlar</text>
+        <rect x="702" y="122" width="196" height="72" rx="12" fill="#fff5df" stroke="#dfbb68" stroke-width="2"/>
+        <text x="800" y="151" text-anchor="middle" font-weight="700" font-size="15" fill="#17243a">Self-contained</text>
+        <text x="800" y="174" text-anchor="middle" font-size="12" fill="#52647c">runtime publish'e dahil</text>
+      </svg>
+      <figcaption id="deploy-caption">Ok, build çıktısının iki deployment (hedef ortama yayımlama) biçiminden hangisine paketlendiğini gösterir; kutu adları yukarıdaki metinde açıklanmıştır.</figcaption>
+    </figure>
+    <table><thead><tr><th>Terim</th><th>Kısa karşılık</th><th>Arıza örneği</th></tr></thead><tbody>
+      <tr><td>SDK</td><td>Build/publish araç takımı; çalışan uygulamanın kendisi değil.</td><td>CI'da SDK yoksa restore/build başlayamaz.</td></tr>
+      <tr><td>Runtime</td><td>Uygulama kodunu host üzerinde çalıştıran motor ve framework.</td><td>Framework-dependent image'ta runtime yoksa uygulama başlamaz.</td></tr>
+      <tr><td>TFM</td><td>Hedeflenen .NET API ailesi; <code>net10.0</code> örnektir.</td><td>TFM 10 hedefleyen binary .NET 8 runtime'da çalışmaz.</td></tr>
+      <tr><td>RID</td><td>İşletim sistemi/CPU yayın tanımlayıcısı.</td><td>linux-x64 çıktısı macOS/ARM uygulaması değildir.</td></tr>
+    </tbody></table>
+    <p>Depodaki <code>Directory.Build.props</code>, tüm projelerde <code>net10.0</code>, nullable referans tipleri ve <code>LangVersion=14</code> belirliyor. Makinede kurulu SDK 10.0.401 ve runtime 10.0.12 ile solution build edildi. Kök README'de beklenen SDK 10.0.402 yazması gerçek kurulumla aynı şey değildir; `global.json` olmadığı için SDK seçimi makine politikasına bağlıdır. CI'da SDK bandını sabitleyin, runtime patch'lerini ise destek politikasına göre düzenli güncelleyin.</p>
+    <div class="callout warn"><strong>Sürüm desteği ≠ otomatik güncelleme</strong>. Microsoft'un .NET sürüm politikası .NET 10'u LTS olarak listeler ve destek bitişini Kasım 2028 olarak verir. Destek dönemi, uygulamanın bağımlılıkları, container tabanı ve güvenlik yamalarının güncel olduğu anlamına gelmez.</div>
+  </section>
+  <section id="csharp">
+    <h2>C# 14: hangi yenilikler nerede değer üretir?</h2>
+    <p><strong>C# 14 (.NET 10 ile yayımlanan C# dil sürümü)</strong> derleyici özelliklerini getirir; .NET Runtime sürümüyle aynı kavram değildir. Projedeki <code>Directory.Build.props</code>, bütün projelerde <code>LangVersion=14</code> seçiyor. Aşağıdaki her örneğin yanında hangi günlük problemi çözdüğü ve hangi koşulda tercih edileceği anlatılır. Bunlar küçük, bağımsız dil örnekleridir; repository'nin iş kuralı olarak kullanılmaları gerektiği anlamına gelmez.</p>
+    <h3>1. Extension Members (Genişletme Üyeleri): metot yanında property ve static üyeler</h3>
+    <p>Eski extension method yalnızca statik extension metodu instance metodu gibi çağırırdı; alan/property ekleyemezdi. C# 14 extension block'ları instance üyelerini ve type üzerinde static üyeleri gruplayabilir. Gateway'de tekrar eden tenant claim okuması için örnek:</p>
+    <pre><code>public static class GatewayContextExtensions
+{
+    extension(HttpContext context)
+    {
+        public string? TenantId =>
+            context.User.FindFirst("tenant_id")?.Value;
+
+        public bool HasTenant =>
+            !string.IsNullOrWhiteSpace(context.TenantId);
+    }
+}
+
+// Kullanım: controller/middleware içinde:
+var tenantId = httpContext.TenantId;</code></pre>
+    <p>Bu API extension property'yi gerçek <code>HttpContext</code> sınıfına eklemez; receiver (genişletilen alıcı tür) üzerinde çağrılan derleme zamanı üyeleri sunar. Domain policy'yi global extensions sınıfına yığmayın: extension'lar iş kuralını gizleyebilir veya aynı isimdeki üyelerle belirsiz overload oluşturabilir.</p>
+    <h3>2. Null-Conditional Assignment (Null Koşullu Atama): guard tekrarını azaltır</h3>
+    <p>Önceden null kontrolüyle sarılan property/element assignment ve bileşik atama (<code>+=</code>/<code>-=</code>) artık <code>?.</code> / <code>?[]</code> ile sol tarafta yapılabilir. Alıcı <code>null</code> ise sağ taraf da değerlendirilmez; yan etkili hesap gereksiz yere çalışmaz.</p>
+    <pre><code>// Önce:
+if (sagaState is not null)
+    sagaState.FailureReason = "Inventory timeout";
+
+// C# 14:
+sagaState?.FailureReason = "Inventory timeout";
+sagaState?.FailureReason = BuildDiagnosticMessage();
+sagaState?.RetryCount += 1;</code></pre>
+    <p>Bu yalnızca nesne null iken atamayı atlar; null değerin iş kuralında geçerli olup olmadığını çözmez. Kritik transition'da <code>if (sagaState is null) throw ...</code> daha açık olabilir. <code>++</code>/<code>--</code> null-conditional assignment ile kullanılmaz.</p>
+    <h3>3. <code>nameof</code> ile Sınırsız Generic Tür Desteği: tür argümanlarını seçmeden isim alır</h3>
+    <p><strong>Unbound generic type (tür argümanları verilmemiş generic tanım)</strong> için <code>nameof</code> artık <code>List&lt;&gt;</code> veya <code>Dictionary&lt;,&gt;</code> kabul eder:</p>
+    <pre><code>var collectionName = nameof(List&lt;&gt;);  // "List"
+var mapName = nameof(Dictionary&lt;,&gt;); // "Dictionary"
+var propertyName = nameof(TenantOptions.TenantId);</code></pre>
+    <p>Bu, diagnostics/validation metninde generic tipin specialization'ı bilinmediğinde reflection'sız sembol adı verir. <code>nameof(List&lt;int&gt;)</code> önceki sürümlerde de mümkündü. <code>nameof</code> assembly-qualified metadata adı sağlamaz.</p>
+    <h3>4. <code>Span&lt;T&gt;</code> / <code>ReadOnlySpan&lt;T&gt;</code> için Örtük Dönüşümler: gereksiz geçici kopyaları azaltır</h3>
+    <p>C# 14, <code>T[]</code>, <code>Span&lt;T&gt;</code> ve <code>ReadOnlySpan&lt;T&gt;</code> arasındaki bazı örtük dönüşümleri dilin daha fazla bağlamında tanır; extension receiver ve generic type inference (generic tür çıkarımı) gibi durumlarda doğrudan kullanım kolaylaşır. Örneğin array artık <code>ReadOnlySpan&lt;int&gt;</code> receiver'lı extension method'a doğrudan bağlanabilir:</p>
+    <pre><code>public static class TelemetrySpanExtensions
+{
+    public static long SumValues(this ReadOnlySpan&lt;int&gt; values)
+    {
+        long sum = 0;
+        foreach (int value in values)
+            sum += value;
+        return sum;
+    }
+}
+
+int[] sample = [12, 18, 42];
+long total = sample.SumValues(); // array -> ReadOnlySpan receiver conversion</code></pre>
+    <p>Repodaki Kafka consumer ise buffer sahipliğini ve gerçek payload uzunluğunu açıkça yönettiği için <code>AsSpan(0, length)</code> çağırır:</p>
+    <pre><code>byte[] rented = ArrayPool&lt;byte&gt;.Shared.Rent(kafkaValue.Length);
+kafkaValue.AsSpan().CopyTo(rented.AsSpan());
+
+// Yalnızca payload uzunluğu görünür; pool kapasitesi payload değildir.
+TelemetryPayload payload =
+    TelemetryPayload.DeserializeFromUtf8(
+        rented.AsSpan(0, kafkaValue.Length));</code></pre>
+    <p><code>Span&lt;T&gt;</code> değiştirilebilir, <code>ReadOnlySpan&lt;T&gt;</code> salt-okunur bellek penceresidir; kendileri veri kopyası değildir. Span ref-struct yaşam kuralları nedeniyle heap'e/normal async state machine'e gelişigüzel taşınamaz. Dönüşümler buffer ownership, slice length ve <code>ArrayPool.Return</code> sorumluluğunu kaldırmaz; repodaki buffer işlem tamamlanınca elle iade edilir.</p>
+    <h3>5. Lambda Parametrelerinde Değiştiriciler: modifier yaz, parametre türünü hedef delegate'den al</h3>
+    <p>Hedef delegate tipi biliniyorsa lambda parametre tipini tekrar yazmadan <code>ref</code>, <code>in</code>, <code>out</code>, <code>scoped</code> ve <code>ref readonly</code> modifier kullanılabilir. Bu, özellikle generic delegate ve büyük struct/span API'lerinde signature tekrarını azaltır.</p>
+    <pre><code>delegate bool TryParseValue&lt;T&gt;(string text, out T result);
+TryParseValue&lt;int&gt; parseInt =
+    (text, out value) => int.TryParse(text, out value);
+
+var succeeded = parseInt("42", out var quantity);</code></pre>
+    <p><code>out</code> çağrı öncesi değer istemeyen ve çağrı içinde değer üreten parametredir. <code>in</code>/<code>ref readonly</code> mutasyonsuz by-reference; <code>ref</code> okuma-yazma by-reference; <code>scoped</code> referansın escape/lifetime kapsamını sınırlar. Lambda modifier'ı hedef delegate signature ile eşleşmelidir; <code>params</code> için tür yine açıkça yazılır.</p>
+    <h3>6. <code>field</code> Anahtar Sözcüğüyle Desteklenen Özellik: backing-field kodunu azaltır</h3>
+    <p><strong>Backing field (property değerini saklayan özel alan)</strong> daha önce ayrıca tanımlanırdı. <code>field</code>, derleyicinin oluşturduğu alana accessor içinde erişir; örneğin tenant ayarını trim edip boş değeri reddeder:</p>
+    <pre><code>public string TenantId
+{
+    get;
+    set => field = string.IsNullOrWhiteSpace(value)
+        ? throw new ArgumentException(
+            "TenantId is required.", nameof(value))
+        : value.Trim();
+} = "default";</code></pre>
+    <p>Bu yalnızca accessor yazımını kısaltır; options validation ve domain invariant'ını otomatik çözmez. Aynı tipte <code>field</code> isimli sembol varsa <code>@field</code> veya <code>this.field</code> ile ayrıştırın. Üretimde invalid config'i startup'ta görünür kılın; sessizce default tenant'a düşmeyin.</p>
+    <h3>7. Partial Events (Kısmi olaylar): generated contract ile accessor implementasyonunu ayırır</h3>
+    <p><strong>Partial type (aynı sınıfın birden çok kaynak dosyasına bölünmesi)</strong> kullanıldığında source generator (kaynak kod üreteci) event deklarasyonunu oluşturabilir; elle yazılan dosya event'in subscriber listesini yöneten <code>add</code>/<code>remove</code> accessor'larını sağlar. Tanımlayan ve implement eden deklarasyon aynı signature'a sahip olmalı; event implementasyonu iki accessor'ı da içermelidir.</p>
+    <pre><code>// InventoryClient.Contracts.g.cs — generator'ın ürettiği deklarasyon
+public partial class InventoryClient
+{
+    public partial event EventHandler? Connected;
+}
+
+// InventoryClient.Events.cs — elle yazılan accessor implementasyonu
+public partial class InventoryClient
+{
+    private EventHandler? _connected;
+
+    public partial event EventHandler? Connected
+    {
+        add => _connected += value;
+        remove => _connected -= value;
+    }
+}</code></pre>
+    <p>Örneğin generated proxy event imzası sabit kalırken transport'a özgü abonelik yönetimini ayrı dosyada tutabilirsiniz. Generator veya implementasyon eksikse partial member tamamlanmayacağı için build hata vermelidir; event'in kendisi thread-safe dispatch garantisi sağlamaz.</p>
+    <h3>8. Partial Constructors (Kısmi oluşturucular): üretilen koda ait kurulum noktasını tamamlar</h3>
+    <p>Source generator bir constructor'ın imzasını ve elle yazılan partial type ikinci deklarasyonda gövdeyi sağlayabilir. Böylece üretilen API şekli ile kullanıcı doğrulaması ayrılır; ikisinin de aynı parametre listesini/erişilebilirliği taşıması gerekir.</p>
+    <pre><code>// InventoryClient.Contracts.g.cs — constructor deklarasyonu
+public partial class InventoryClient
+{
+    public partial InventoryClient(string endpoint);
+}
+
+// InventoryClient.cs — constructor implementasyonu
+public partial class InventoryClient
+{
+    private readonly string _endpoint;
+    public partial InventoryClient(string endpoint)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
+        _endpoint = endpoint;
+    }
+}</code></pre>
+    <p><code>base(...)</code>/<code>this(...)</code> initializer'ı yalnızca implementing declaration'da olabilir. Bu özellik generated client veya platform parçasını ayırabilir; normal business class'ı keyfi dosyalara bölmek takip maliyetini artırır.</p>
+    <h3>9. User-Defined Compound Assignment Operators (Kullanıcı tanımlı bileşik atama işleçleri)</h3>
+    <p>Daha önce <code>budget -= used</code>, <code>operator -</code> ile yeni değer üretip sol değişkene atardı. C# 14 türün bileşik atamayı yerinde düzenlemesine izin verir; büyük mutable türlerde ara nesne/kopya maliyetini azaltabilir.</p>
+    <pre><code>public sealed class TokenBudget
+{
+    public int Remaining { get; private set; }
+
+    public void operator -=(int used)
+    {
+        if (used &lt; 0 || used &gt; Remaining)
+            throw new InvalidOperationException("Budget exceeded.");
+        Remaining -= used;
+    }
+}
+
+budget -= providerReportedUsage;</code></pre>
+    <p>Operatörün yan etkisi şaşırtıcı olabilir; aliasing (aynı nesneye birden fazla referans), value type kopyası ve thread-safety ayrıca düşünülmelidir. Bu örnek in-memory mutasyondur; Redis üzerinde atomik kota düşümü değildir ve distributed lock yerine geçmez.</p>
+    <h3>10. File-Based Apps için Yeni Ön İşlemci Yönergeleri: proje dosyasız küçük araç</h3>
+    <p><code>#:</code> satırları C# compiler macro'su değildir. <strong>.NET 10 SDK build sistemi</strong>, dosya tabanlı uygulamada <code>#:package</code>, <code>#:project</code>, <code>#:property</code> ve <code>#:sdk</code> yönergelerini yorumlar; güncel SDK dokümanında <code>#:include</code> için 10.0.300 ve sonrası koşulu belirtilir. Tek dosya uygulama <code>dotnet run --file diagnostic.cs</code> ile çalıştırılabilir.</p>
+    <pre><code>#:property TargetFramework=net10.0
+Console.WriteLine("service=inventory; healthy=true");</code></pre>
+    <p>Çalıştırma: <code>dotnet run --file diagnostic.cs</code>; beklenen çıktı <code>service=inventory; healthy=true</code>. Bu, yerel log/health verisi inceleyen kısa araç için hızlı başlangıçtır; repository'deki çok projeli solution, CI, merkezi paket yönetimi, container publish veya uzun ömürlü service'e alternatif değildir. File-based app'in trim/AOT yayın varsayımlarını dikkate alın; reflection tabanlı JSON serialization gibi API'ler çalışmayabilir veya source generation isteyebilir. <code>#:package</code> kullanırken sürüm sabitleyin; bu biçim de supply-chain ve secret kurallarına tabidir.</p>
+    <div class="callout warn"><strong>Kritik özet</strong>C# 14'ün on başlığı da yukarıda ayrı ayrı işlendi. Dil yenilikleri runtime upgrade değildir. C# compiler SDK'nin parçasıdır; eski SDK aynı kaynak kodu derleyemeyebilir. Çözümü CI SDK bandı ve proje hedefleriyle doğrulayın.</div>
+    <p>Bu sözdizimini “daha yeni, dolayısıyla daha iyi” diye yaygınlaştırmayın. Public API'lerde analyzer/IDE, SDK ve ekip dil seviyesiyle uyumu; framework library'sinde ise tüketicinin compiler desteğini değerlendirin. Örneğin eski target'lara multi-target eden bir library, .NET 10'a özgü API'leri koşullu derleme olmadan kullanamaz.</p>
+  </section>
+  <section id="aspnet">
+    <h2>ASP.NET Core: host ve istek hattı</h2>
+    <p>Depodaki gateway <code>WebApplication.CreateBuilder</code> ile configuration (ayar kaynakları), logging (log sistemi) ve DI (dependency injection: bağımlılıkları çalışma anında bağlama) kurar; authentication/authorization, correlation/claim, PII maskeleme, token budget ve YARP proxy middleware sırası güvenlik ve semantiği etkiler. <strong>Middleware (HTTP isteği üzerinde sırayla çalışan bileşen)</strong> aşağı akışta request'i, dönüşte response'u işler; endpoint mapping ise uygulamanın route yüzeyini belirler. PII middleware'i proxy'den sonra çalışırsa üçüncü tarafa ham içerik gidebilir. Authentication sonrası tenant claim'i güvenilir hale gelir; istemcinin serbestçe verdiği header'ı doğrudan kimlik kabul etmek güven sınırını deler.</p>
+    <pre><code>// ApiGateway/Program.cs — repository'deki gerçek sıralamanın özeti
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseCorrelationAndClaimInjection();
+app.UsePiiMasking();
+app.UseLlmTokenBudget();
+
+app.MapReverseProxy(proxyPipeline =&gt;
+{
+    proxyPipeline.UseMiddleware&lt;GatewayRateLimitingMiddleware&gt;();
+});</code></pre>
+    <p><strong>YARP (Yet Another Reverse Proxy: ASP.NET Core üzerinde ters proxy kütüphanesi)</strong> route'u <code>yarp.json</code>'dan okur; <code>/api/orders</code> yolunu Order cluster'ına, <code>/api/inventory</code>'yi Inventory cluster'ına yönlendirir. Rate limit middleware'inin proxy pipeline'ında olması route metadata'ya erişmek içindir. Gerçek deployment'ta downstream servis doğrudan dışarı açılmamalı; gateway'in eklediği tenant/user header'ları yalnızca gateway'den kabul edilmeli veya doğrulanmış identity taşımalıdır.</p>
+    <p>ASP.NET Core 10'un release-notes sayfasındaki özellikleri kullanmadan önce ihtiyaç, runtime ve paket uyumunu doğrulayın. Mevcut solution build'inin başarılı olması endpoint'lerin, kimlik sağlayıcısının, mesaj broker'ının veya ölçek altında davranışın doğrulandığını göstermez.</p>
+  </section>
+  <section id="ogretmen">
+    <h2>Tartışma</h2>
+    <p class="trainer">Tahtaya “SDK ≠ runtime ≠ target framework ≠ language version” yazıp katılımcılara container imajı, CI agent ve developer workstation'da her birinin nerede bulunduğunu sordurun. Ardından root README ile Directory.Build.props'u yan yana açın: yazılı hedef ile gerçek build kanıtını ayırın.</p>
+    <ul><li>Servicing güncellemesini hangi sinyal, hangi ekip ve hangi rollback planıyla üretime alırsınız?</li><li>Framework-dependent deployment'da runtime eksikse ve self-contained deployment'da güvenlik yaması unutulursa hangi hata ortaya çıkar?</li><li>C# 14 extension property, domain modeline gerçek anlam katıyor mu; yoksa extension method daha açık mı?</li></ul>
+    <div class="callout tip"><strong>Uygulama vurgusu</strong>Bir PR'da TFM, SDK pin'i, NuGet paket ana sürümleri, container base image, CI runner ve test matrisi ayrı ayrı gözden geçirilmelidir. “Build yeşil” fonksiyonel, performans ve güvenlik kabulü değildir.</div>
+  </section>
+  <section id="kaynak">
+    <h2>Proje karşılığı ve kaynaklar</h2>
+    <ul>
+      <li><a href="../Directory.Build.props">Directory.Build.props</a> — TFM, nullable ve C# 14 ayarları.</li>
+      <li><a href="../EvolutionaryLogistics.slnx">EvolutionaryLogistics.slnx</a> — solution içindeki servis ve building block'lar.</li>
+      <li><a href="https://learn.microsoft.com/dotnet/csharp/whats-new/csharp-14">C# 14 yenilikleri (Microsoft Learn)</a></li>
+      <li><a href="https://learn.microsoft.com/dotnet/core/releases-and-support">.NET sürüm ve destek politikası (Microsoft Learn)</a></li>
+      <li><a href="https://learn.microsoft.com/aspnet/core/release-notes/aspnetcore-10.0">ASP.NET Core 10 release notes</a></li>
+    </ul>
+  </section>
+  <nav class="pager"><span>Başlangıç</span><a href="02-mikroservisler-sinirlar.html">Sonraki: Servis sınırları →</a></nav>
+</article>
+<aside class="side"><h2>Bu oturum</h2><ol><li><a href="#hedef">Hedef ve akış</a></li><li><a href="#platform">Platform katmanları</a></li><li><a href="#csharp">C# 14: 10 özellik</a></li><li><a href="#aspnet">ASP.NET Core</a></li><li><a href="#ogretmen">Tartışma</a></li><li><a href="#kaynak">Kaynaklar</a></li></ol></aside>
+</main>
+<footer>Teknik sürüm bilgileri 18 Ekim 2026 tarihinde resmî Microsoft dokümantasyonuyla kontrol edilmiştir. Harici bağlantılar kaynak gösterimidir; ders sayfası çevrimdışı okunabilir.</footer>
+</body>
+</html>
