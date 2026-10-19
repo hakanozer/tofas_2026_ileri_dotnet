@@ -232,8 +232,10 @@ services:
       <<: *dotnet-env
       OTEL_SERVICE_NAME: api-gateway
       ReverseProxy__ConfigPath: /app/yarp.json
-      Jwt__Authority: https://login.example.com/realms/logistics
+      Jwt__Issuer: evolutionary-logistics-gateway
       Jwt__Audience: logistics-api
+      # Secret kaynak koda yazılmaz: .env veya ortam değişkeni ile verin (min 32 bayt), örn: openssl rand -base64 48
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:-}
     ports:
       - "8080:8080"
     volumes:

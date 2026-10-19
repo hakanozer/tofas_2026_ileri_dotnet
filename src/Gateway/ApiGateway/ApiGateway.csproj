@@ -9,6 +9,11 @@
     <!-- Curriculum target: YARP 3.12.1 — NuGet currently ships 2.3.0 with compatible config schema -->
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0-preview.7.25380.108" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
     <!-- Serilog.AspNetCore: UseSerilogRequestLogging middleware. Config lives in Shared.Observability. -->
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
   </ItemGroup>

@@ -1,5 +1,7 @@
 using EvolutionaryLogistics.BuildingBlocks.Observability;
+using EvolutionaryLogistics.Gateway.Auth;
 using EvolutionaryLogistics.Gateway.Middleware;
+using Microsoft.AspNetCore.HttpOverrides;
 using Serilog;
 using StackExchange.Redis;
 
@@ -18,17 +20,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(redisConnection));
 builder.Services.AddSingleton<ITenantQuotaStore, RedisTenantQuotaStore>();
 
-builder.Services.AddAuthentication("Bearer")
-    .AddJwtBearer("Bearer", options =>
-    {
-        options.Authority = builder.Configuration["Jwt:Authority"];
-        options.Audience = builder.Configuration["Jwt:Audience"];
-        options.RequireHttpsMetadata = false;
-        options.TokenValidationParameters.ValidateIssuer = false;
-        options.TokenValidationParameters.ValidateAudience = false;
-    });
-
-builder.Services.AddAuthorization();
+builder.Services.AddGatewayAuth(builder.Configuration);
 
 var yarpPath = builder.Configuration["ReverseProxy:ConfigPath"] ?? "yarp.json";
 builder.Configuration.AddJsonFile(yarpPath, optional: false, reloadOnChange: true);
@@ -36,8 +28,24 @@ builder.Services.AddReverseProxy().LoadFromConfig(builder.Configuration.GetSecti
 
 var app = builder.Build();
 
+// TLS sonlandıran reverse proxy arkasında Request.IsHttps doğru olsun diye (yalnızca açıkça etkinse).
+if (builder.Configuration.GetValue<bool>("Auth:TrustForwardedHeaders"))
+{
+    var forwarded = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto };
+    forwarded.KnownIPNetworks.Clear();
+    forwarded.KnownProxies.Clear();
+    app.UseForwardedHeaders(forwarded);
+}
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
+await app.MigrateAuthDatabaseAsync();
+
 app.UseSerilogRequestLogging();
 app.UseAuthentication();
+app.UseMiddleware<CsrfProtectionMiddleware>();
 app.UseAuthorization();
 app.UseCorrelationAndClaimInjection();
 // ── Gün 2: Rate limiting proxy pipeline'a kaydedilir. GOTCHA: IReverseProxyFeature
@@ -52,11 +60,13 @@ app.MapReverseProxy(pipeline =>
     pipeline.UseMiddleware<GatewayRateLimitingMiddleware>();
 });
 
+app.MapAuthEndpoints();
+
 app.MapGet("/", () => Results.Ok(new
 {
     service = "Evolutionary Logistics API Gateway",
     yarp = "3.12.1",
-    routes = new[] { "/api/orders", "/api/inventory", "/api/ai" }
+    routes = new[] { "/api/orders", "/api/inventory", "/api/ai", "/api/auth" }
 }));
 
 app.Run();
