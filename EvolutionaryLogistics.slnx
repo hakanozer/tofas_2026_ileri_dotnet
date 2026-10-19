@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/" />
   <Folder Name="/src/BuildingBlocks/">
+    <Project Path="src/BuildingBlocks/Shared.Auth/Shared.Auth.csproj" />
     <Project Path="src/BuildingBlocks/Shared.Grpc/Shared.Grpc.csproj" />
     <Project Path="src/BuildingBlocks/Shared.Kernel/Shared.Kernel.csproj" />
     <Project Path="src/BuildingBlocks/Shared.Observability/Shared.Observability.csproj" />
@@ -30,5 +31,9 @@
   </Folder>
   <Folder Name="/src/Services/Telemetry/">
     <Project Path="src/Services/Telemetry/TelemetryStreamProcessor/TelemetryStreamProcessor.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Inventory.Api.Tests/Inventory.Api.Tests.csproj" />
+    <Project Path="tests/Order.Api.Tests/Order.Api.Tests.csproj" />
   </Folder>
 </Solution>

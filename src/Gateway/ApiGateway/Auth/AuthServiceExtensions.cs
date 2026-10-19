@@ -52,6 +52,8 @@ public static class AuthServiceExtensions
                             && !string.IsNullOrEmpty(token))
                         {
                             ctx.Token = token;
+                            // Downstream servisler yalnızca Bearer kabul eder; CSRF kontrolü gateway'de (cookie'li istekler için) yapılır.
+                            ctx.Request.Headers.Authorization = $"Bearer {token}";
                             ctx.HttpContext.Items[CsrfProtectionMiddleware.FromCookieItem] = true;
                         }
                         return Task.CompletedTask;

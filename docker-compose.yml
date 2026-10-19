@@ -257,11 +257,22 @@ services:
       <<: *dotnet-env
       OTEL_SERVICE_NAME: order-service
       ASPNETCORE_URLS: http://+:8081
+      # Her servisin kendi veritabanı (aynı Postgres sunucusunda); ilk açılışta otomatik oluşturulur.
+      ConnectionStrings__OrderDb: Host=postgres;Port=5432;Database=order_db;Username=app;Password=app_secret_change_me
+      Inventory__BaseUrl: http://inventory-service:8082
+      Jwt__Issuer: evolutionary-logistics-gateway
+      Jwt__Audience: logistics-api
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:-}
+      Internal__ApiKey: ${INTERNAL_API_KEY:-}
     ports:
       - "8081:8081"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      inventory-service:
+        condition: service_started
       kafka:
         condition: service_healthy
 
@@ -274,6 +285,11 @@ services:
       <<: *dotnet-env
       OTEL_SERVICE_NAME: inventory-service
       ASPNETCORE_URLS: http://+:8082
+      ConnectionStrings__InventoryDb: Host=postgres;Port=5432;Database=inventory_db;Username=app;Password=app_secret_change_me
+      Jwt__Issuer: evolutionary-logistics-gateway
+      Jwt__Audience: logistics-api
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:-}
+      Internal__ApiKey: ${INTERNAL_API_KEY:-}
     ports:
       - "8082:8082"
     depends_on:

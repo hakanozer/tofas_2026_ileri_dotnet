@@ -7,6 +7,7 @@
         "Match": { "Path": "/api/orders/{**catch-all}" },
         "Transforms": [
           { "PathRemovePrefix": "/api/orders" },
+          { "PathPrefix": "/orders" },
           { "RequestHeaderOriginalHost": "true" },
           { "RequestHeader": "X-Gateway-Route", "Set": "orders-api" },
           { "RequestHeader": "X-Forwarded-Prefix", "Set": "/api/orders" }

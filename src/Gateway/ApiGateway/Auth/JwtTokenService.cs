@@ -52,6 +52,7 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options)
 
         var identity = new ClaimsIdentity();
         identity.AddClaim(new Claim("sub", user.Id.ToString()));
+        identity.AddClaim(new Claim("userId", user.Id.ToString()));
         identity.AddClaim(new Claim("email", user.Email));
         identity.AddClaim(new Claim("given_name", user.FirstName));
         identity.AddClaim(new Claim("family_name", user.LastName));
