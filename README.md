@@ -5,7 +5,7 @@
 ## Hızlı başlangıç
 
 ```bash
-docker compose up -d postgres redis kafka kafka-init rabbitmq jaeger otel-collector prometheus grafana
+docker compose up -d postgres redis kafka kafka-init kafka-ui rabbitmq jaeger otel-collector prometheus grafana
 # Uygulamalar (opsiyonel, build gerekir):
 docker compose up -d --build api-gateway order-service inventory-service
 ```
@@ -15,6 +15,7 @@ docker compose up -d --build api-gateway order-service inventory-service
 | API Gateway (YARP) | http://localhost:8080 |
 | Order API | http://localhost:8081/health |
 | Inventory API | http://localhost:8082/health |
+| Kafbat UI | http://localhost:8085 |
 | Jaeger | http://localhost:16686 |
 | Grafana | http://localhost:3001 (admin/admin) |
 | Graylog | http://localhost:9000 (admin/admin) |

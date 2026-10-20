@@ -5,6 +5,7 @@ using Order.Api.Caching;
 using Order.Api.Clients;
 using Order.Api.Data;
 using Order.Api.Endpoints;
+using Order.Services;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -42,6 +43,9 @@ builder.Services.AddHttpClient<IInventoryClient, InventoryClient>(client =>
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddProblemDetails();
 
+builder.Services.AddControllers();
+builder.Services.AddSingleton<OrderProducer>();
+
 var app = builder.Build();
 
 await using (var scope = app.Services.CreateAsyncScope())
@@ -59,6 +63,8 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", context = "orde
 app.MapGet("/", () => Results.Ok(new { message = "Order service — orders API (see /orders)" }));
 
 app.MapOrderEndpoints();
+
+app.MapControllers();
 
 app.Run();
 

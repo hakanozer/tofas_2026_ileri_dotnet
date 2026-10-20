@@ -4,8 +4,11 @@ using EvolutionaryLogistics.BuildingBlocks.Observability;
 using EvolutionaryLogistics.Services.Inventory.Data;
 using EvolutionaryLogistics.Services.Inventory.Endpoints;
 using Microsoft.EntityFrameworkCore;
+using Inventory.Api.Services;
+using Inventory.Consumers;
 
 var builder = WebApplication.CreateBuilder(args);
+
 
 // ── Gün 3: Observability + structured logging ──
 builder.AddEvolutionarySerilog("inventory-service");
@@ -31,6 +34,11 @@ if (string.IsNullOrEmpty(builder.Configuration[$"{InternalApiOptions.Section}:Ap
 
 builder.Services.AddProblemDetails();
 
+builder.Services.AddControllers();
+
+builder.Services.AddSingleton<InventoryProcessor>();
+builder.Services.AddHostedService<OrderCreatedConsumer>();
+
 var app = builder.Build();
 
 await using (var scope = app.Services.CreateAsyncScope())
@@ -46,8 +54,11 @@ app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 
+
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", context = "inventory" }));
 app.MapInventoryEndpoints();
+
+app.MapControllers();
 
 // Day 2: MapGrpcService<InventoryGrpcService>() after proto + interceptor validation lab
 app.Run();

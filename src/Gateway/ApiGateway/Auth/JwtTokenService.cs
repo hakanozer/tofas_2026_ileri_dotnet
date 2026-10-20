@@ -16,7 +16,7 @@ public sealed class JwtOptions
     public string Audience { get; set; } = string.Empty;
     /// <summary>HMAC-SHA256 key; must come from configuration/secret store (min 32 bytes).</summary>
     public string SigningKey { get; set; } = string.Empty;
-    public int ExpiryMinutes { get; set; } = 60;
+    public int ExpiryMinutes { get; set; } = 600;
     public string CookieName { get; set; } = "access_token";
     public string CsrfCookieName { get; set; } = "XSRF-TOKEN";
     public string CookieSameSite { get; set; } = "Strict";

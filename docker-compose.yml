@@ -104,6 +104,18 @@ services:
         kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic logistics.cdc.inventory --partitions 3 --replication-factor 1
         echo "Kafka topics ready"
 
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.3.0
+    container_name: elp-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8085:8080"
+
   # ─── RabbitMQ (MassTransit / Outbox — Day 2+) ────────────────────────────────
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
