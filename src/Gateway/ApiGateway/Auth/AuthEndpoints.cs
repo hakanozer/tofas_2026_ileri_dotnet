@@ -82,8 +82,6 @@ public static class AuthEndpoints
         HttpContext http,
         CancellationToken ct)
     {
-        int i = 0;
-        int ii = 1 / i;
         if (RequireSecureTransport(http, env) is { } insecure) return insecure;
 
         var errors = new Dictionary<string, string[]>();

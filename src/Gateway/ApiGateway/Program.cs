@@ -21,6 +21,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
 builder.Services.AddSingleton<ITenantQuotaStore, RedisTenantQuotaStore>();
 
 builder.Services.AddGatewayAuth(builder.Configuration);
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 var yarpPath = builder.Configuration["ReverseProxy:ConfigPath"] ?? "yarp.json";
 builder.Configuration.AddJsonFile(yarpPath, optional: false, reloadOnChange: true);
@@ -45,6 +47,9 @@ await app.MigrateAuthDatabaseAsync();
 
 app.UseSerilogRequestLogging();
 app.UseTraceIdResponse();
+// TraceIdResponse'un içinde: hata yanıtı da traceId (header + gövde) alır. Development'taki
+// DeveloperExceptionPage'in önüne geçerek stack trace'in istemciye sızmasını engeller.
+app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseCorrelationAndClaimInjection();
