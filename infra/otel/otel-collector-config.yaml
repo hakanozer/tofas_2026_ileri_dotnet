@@ -25,6 +25,12 @@ processors:
       - name: slow-traces
         type: latency
         latency: { threshold_ms: 500 }
+      # Eğitim ortamı: hata/yavaş dışındaki trace'ler de Jaeger'a gitsin (TraceId ile arama için).
+      # Prod'da sampling_percentage'ı düşürün (örn. 10).
+      - name: baseline-percentage
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 100
 
 exporters:
   otlp/jaeger:

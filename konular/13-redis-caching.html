@@ -1,44 +1,124 @@
 <!doctype html>
 <html lang="tr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Redis distributed cache, cache aside ve invalidation stratejileri"><title>13 · Redis ve caching</title><link rel="stylesheet" href="egitim.css"></head>
-<body><header><div class="eyebrow">Kurumsal .NET · Oturum 13</div><h1>Redis ve caching stratejileri</h1><p>Cache hit oranını tek başına başarı ölçüsü saymayın; freshness, consistency, stampede, tenant scope, invalidation ve Redis failure policy'sini beraber tasarlayın.</p><div class="meta"><span class="pill">Cache-aside</span><span class="pill">Redis distributed state</span></div></header>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Redis: JWT oturum kaydı, sipariş listesi cache-aside, invalidation, kota sayacı ve failure policy"><title>13 · Redis ve caching</title><link rel="stylesheet" href="egitim.css"></head>
+<body><header><div class="eyebrow">Kurumsal .NET · Oturum 13</div><h1>Redis ve caching stratejileri</h1><p>Redis bu projede üç ayrı iş yapar: oturum (JWT) kaydı, okuma hızlandırıcı cache ve paylaşılan sayaç. Her biri farklı TTL, anahtar ve hata politikası ister; cache hit oranını tek başına başarı ölçüsü saymayın.</p><div class="meta"><span class="pill">JWT oturum kaydı</span><span class="pill">Cache-aside</span><span class="pill">Invalidation</span><span class="pill">Redis failure policy</span></div></header>
 <main class="layout"><article>
-<section id="plan"><h2>Ders akışı</h2><ol><li>Cache katmanları ve maliyet modeli</li><li>Cache-aside, TTL ve invalidation</li><li>Stampede, Redis partition/availability ve quota örneği</li><li>Gözlemleme ve güvenlik</li></ol></section>
-<section id="pattern"><h2>Cache hangi problemi çözer, hangisini çözmez?</h2><p>Cache latency ve tekrarlanan pahalı hesaplama/DB yükünü azaltır; source of truth değildir. Cache-aside: read cache, miss'te source load, cache set; write sonrası invalidate veya versioned key ile stale data yönetir. TTL stale kalma süresine üst sınır getirir ama invalidation propagation garantisi değildir. Negative cache, hot key, TTL jitter, stale-while-revalidate ve per-key single-flight farklı iş profillerine yarar. Cache hit rate tek başına işlevsellik değildir: stale age, p95, backend miss amplification, memory evictions ve error rate'i de izleyin.</p><p>Cache key canonicalization deterministik olmalı, tenant/role/locale/filter/page ve model version gibi sonucu etkileyen bütün boyutları kapsamalıdır. PII veya yetkili içerik için key erişimi/ACL değerlendirin. JSON schema değişince eski entry parse edilemeyebilir; cache değerine version prefix koyun ve migration/eviction planlayın. Cache stampede, TTL bittiğinde binlerce concurrent request'in aynı DB query'sine düşmesidir; distributed lock veya single-flight destek olur ama lock lease expiry ve owner crash davranışını test edin.</p></section>
-<section id="repo"><h2>Projede iki Redis kullanım profili</h2><p><a href="../src/BuildingBlocks/Shared.Kernel/Caching/CacheAsideBehavior.cs">CacheAsideBehavior</a>, <code>IDistributedCache</code> ile query response cache'liyor; Medallion distributed lock ile cache miss single-flight deniyor, lock alınamazsa kısa bekleyip fallback load yapıyor. Lock provider hata verince warning ile degrade etmesi availability-first kararıdır; stampede güvenlik ağı garanti olmaktan çıkar, backend load alarmı gerekir. JSON serialization exception'ında entry evict ediliyor.</p><p><a href="../src/Gateway/ApiGateway/Middleware/LlmTokenBudgetMiddleware.cs">RedisTenantQuotaStore</a>, gateway replica'ları arasında günlük tenant token usage sayacı tutuyor. Redis'teki <code>INCR</code> atomik olsa da current implementation'daki <code>GET remaining</code> ardından modele çağrı yapıp usage sonradan düşmek eşzamanlı rezervasyon yarışı doğurabilir: birden çok istek aynı kalan bütçeyi görebilir. Ayrıca günlük anahtar reset/TTL ve UTC day window birlikte ele alınmalıdır. Sert maliyet limiti gerekiyorsa atomic reservation/lease (Lua/script veya transaction) ve provider-reported token usage kullanın; tahmini chars/4 sayaç mutabakat değildir.</p></section>
-<section id="invalidation"><h2>Invalidation ve cache tutarlılığı</h2><p><a href="../src/Services/Inventory/Inventory.Application/Events/InventoryDomainEvents.cs">InventoryReservedDomainEvent</a>, tam SKU anahtarı ile pattern invalidation key'leri bildiriyor. Redis Pub/Sub volatile'dır: offline subscriber mesajı kaçırır; pattern scan yüksek key cardinality'de pahalı olabilir. Durable invalidation gerekiyorsa Outbox event'i, versioned cache key veya CDC ile replay edilebilir mekanizma düşünün. Handler'ın publish etmesi ile business transaction arasında dual-write varsa, cache eski kalsa bile update tamamlanmış görünebilir. “Stale kabul edilebilir” kararını domain ve kullanıcı beklentisiyle kayda alın.</p><p>Redis down iken davranış workload'a göre seçilir: read cache fail-open DB'ye yük bindirir; fail-closed read availability'yi düşürür; quota store fail-open maliyet limitini aşırabilir. Tek policy her key'e uymaz. Redis memory max, eviction policy, persistence/replication, TLS/auth, backup/restore ve multi-AZ failover ayrı operasyonel konulardır.</p></section>
-<section id="test"><h2>Doğrulama planı</h2><ul><li>Cache hit/miss ve source query sayısını karşılaştırın; query latency değil uçtan uca latency ölçün.</li><li>100+ concurrent miss ile stampede, lock timeout ve fallback path'i doğrulayın.</li><li>Redis'i durdurup cache, lock ve quota policy'lerinin birbirinden farklı çalıştığını gözleyin.</li><li>Tenant/role/locale varyasyonlarında key collision veya veri sızıntısı testi yapın.</li><li>Eviction, failover ve stale entry senaryolarında freshness SLO'sunu ölçün.</li></ul></section>
-<section id="walkthrough"><h2>Kod yürüyüşü: cache-aside ve kota kontrolünün farkı</h2><p>Bu repoda iki Redis kullanımını karşılaştırın: CQRS query pipeline'ındaki cache-aside (önce cache oku, miss'te kaynağa git) ve AI gateway'in token budget sayaçları. Biri kısa TTL'li read optimization, diğeri maliyet/kullanım kontrolü; failure policy'leri aynı seçilmemelidir.</p><pre><code>// Query cache: key + 30 saniyelik freshness penceresi
-public string CacheKey =&gt; $"inventory:availability:{Sku}";
-public TimeSpan? AbsoluteExpiration =&gt; TimeSpan.FromSeconds(30);
+<section id="plan"><h2>Ders akışı</h2><ol><li>Redis'in projedeki dört rolü ve anahtar haritası</li><li>Gateway: login'de JWT oturumunun Redis'e yazılması, her istekte doğrulanması, logout'ta silinmesi</li><li>Order servisi: <code>ListAsync</code> cache-aside, <code>CreateAsync</code> invalidation</li><li>Ortak cache davranışı, stampede ve kota sayacı</li><li>Failure policy, güvenlik, operasyon ve doğrulama planı</li></ol></section>
 
-// LLM quota middleware: check-before-use ve response stream sayacı
-var tenant = context.Request.Headers[TenantHeader].FirstOrDefault()
-    ?? context.User.FindFirst("tenant_id")?.Value;
-if (string.IsNullOrWhiteSpace(tenant))
+<section id="map"><h2>Redis projede ne için kullanılıyor?</h2><p>Tek bir Redis örneği (<code>redis:8.10.2-alpine</code>) dört farklı sorumluluğa hizmet eder. Hepsinde Redis <strong>source of truth değildir</strong> (oturum kaydı hariç, bkz. aşağıda): kaybolursa veri PostgreSQL'den yeniden üretilebilir. Oturum kaydı ise “bu token hâlâ geçerli mi?” sorusunun cevabıdır; bu yüzden hata politikası farklıdır.</p>
+<table><thead><tr><th>Kullanım</th><th>Anahtar</th><th>TTL</th><th>Yazan / okuyan</th><th>Redis erişilemezse</th></tr></thead><tbody>
+<tr><td>JWT oturum kaydı</td><td><code>auth:session:{jti}</code></td><td><code>Jwt:ExpiryMinutes</code> (600 dk)</td><td>Gateway: login yazar, her istek okur, logout siler</td><td><strong>Fail-closed</strong>: istek 401, login 503</td></tr>
+<tr><td>Sipariş listesi cache'i</td><td><code>orders:user:{userId}:list</code></td><td><code>Cache:OrderListTtlSeconds</code> (60 sn)</td><td>Order servisi: <code>ListAsync</code> okur/yazar, <code>CreateAsync</code> siler</td><td><strong>Fail-open</strong>: DB'ye düşülür</td></tr>
+<tr><td>Query cache (CQRS)</td><td><code>inventory:availability:{Sku}</code></td><td>30 sn</td><td><code>CacheAsideBehavior</code></td><td>Fail-open + lock degrade</td></tr>
+<tr><td>LLM token kotası</td><td>tenant/gün bazlı sayaç</td><td>Gün penceresi</td><td>Gateway <code>RedisTenantQuotaStore</code></td><td>Maliyet riski: ayrı karar</td></tr>
+</tbody></table>
+<div class="callout tip"><strong>Anahtar adlandırma kuralı</strong><code>alan:kapsam:kimlik[:tür]</code> biçimi kullanın (<code>orders:user:&lt;guid&gt;:list</code>). Kullanıcıya özel veride <code>userId</code> anahtarın içinde olmalıdır; böylece kullanıcılar arasında veri paylaşımı yapısal olarak imkânsız hâle gelir.</div></section>
+
+<section id="pattern"><h2>Cache hangi problemi çözer, hangisini çözmez?</h2><p>Cache latency ve tekrarlanan pahalı hesaplama/DB yükünü azaltır. <strong>Cache-aside</strong> akışı: önce cache'i oku; miss ise kaynaktan yükle ve cache'e yaz; yazma işleminden sonra ilgili anahtarı sil (invalidate) veya versiyonlu anahtar kullan. TTL stale kalma süresine üst sınır koyar ama invalidation'ın ulaştığını garanti etmez; invalidation başarısız olsa bile veri en fazla TTL kadar bayat kalır.</p>
+<div class="flow">İstek → Redis GET → hit: dön · miss: PostgreSQL → Redis SET (TTL) → dön</div>
+<p>Cache key; sonucu etkileyen tüm boyutları (kullanıcı/tenant, rol, dil, filtre, sayfa, model versiyonu) kapsamalıdır. PII veya yetkili içerik için anahtar erişimini ayrıca değerlendirin. JSON şeması değişirse eski kayıt parse edilemeyebilir: bu durumda kaydı sil ve kaynağa düş (projede <code>JsonException</code> yakalanıp miss sayılır). Cache stampede, TTL bittiğinde binlerce eşzamanlı isteğin aynı DB sorgusuna düşmesidir; distributed lock veya single-flight yardımcı olur, ancak lock lease süresi ve owner crash davranışı test edilmelidir. Hit rate'in yanında stale age, p95, miss amplification, eviction ve hata oranını da izleyin.</p></section>
+
+<section id="session"><h2>Gateway: JWT oturumu Redis'te zamana bağlı tutulur</h2><p><code>POST /api/auth/login</code> başarılı olunca gateway bir JWT üretir ve bu JWT'nin benzersiz kimliğini (<code>jti</code> claim'i) Redis'e yazar. İmza ve süre kontrolü tek başına yetmez: token çalınsa veya kullanıcı çıkış yapsa bile JWT kendi süresi dolana kadar kriptografik olarak geçerli kalır. Redis kaydı bu boşluğu kapatır: <em>anahtar yoksa token reddedilir</em>.</p>
+<div class="flow">login → JWT(jti) üret → SET auth:session:{jti} (TTL = token ömrü) → cookie
+<br>her istek → imza + süre doğrula → EXISTS auth:session:{jti} → yoksa 401
+<br>logout → DEL auth:session:{jti} → eski token artık 401</div>
+<table><thead><tr><th>Olay</th><th>Redis işlemi</th><th>Sonuç</th></tr></thead><tbody>
+<tr><td>Login başarılı</td><td><code>SET auth:session:{jti} {userId} EX 36000</code></td><td>Oturum başladı; TTL token <code>exp</code> süresiyle aynı</td></tr>
+<tr><td>Korumalı istek</td><td><code>EXISTS auth:session:{jti}</code></td><td>Var → devam; yok → 401</td></tr>
+<tr><td>TTL doldu</td><td>Redis anahtarı kendiliğinden siler</td><td>JWT <code>exp</code> ile aynı anda geçersiz; temizlik işi gerekmez</td></tr>
+<tr><td>Logout</td><td><code>DEL auth:session:{jti}</code></td><td>Cookie silinmese/sızsa bile token anında geçersiz</td></tr>
+</tbody></table>
+<p>Kod üç yerde değişir: <a href="../src/Gateway/ApiGateway/Auth/JwtTokenService.cs">JwtTokenService</a> token'a <code>jti</code> ekler; <a href="../src/Gateway/ApiGateway/Auth/TokenSessionStore.cs">ITokenSessionStore / RedisTokenSessionStore</a> Redis erişimini soyutlar; <a href="../src/Gateway/ApiGateway/Auth/AuthEndpoints.cs">AuthEndpoints</a> login'de kaydı yazar, logout'ta siler; <a href="../src/Gateway/ApiGateway/Auth/AuthServiceExtensions.cs">AuthServiceExtensions</a> içindeki <code>OnTokenValidated</code> olayı her istekte kaydı kontrol eder.</p>
+<pre><code>// TokenSessionStore.cs — anahtar jti, TTL token ömrü kadar
+public static string Key(string jti) =&gt; $"auth:session:{jti}";
+
+public Task StoreAsync(string jti, Guid userId, TimeSpan ttl, CancellationToken ct = default)
+    =&gt; redis.GetDatabase().StringSetAsync(Key(jti), userId.ToString(), ttl);
+
+public Task&lt;bool&gt; IsActiveAsync(string jti, CancellationToken ct = default)
+    =&gt; redis.GetDatabase().KeyExistsAsync(Key(jti));
+
+// AuthEndpoints.LoginAsync — cookie'den ÖNCE Redis'e yazılır
+var issued = tokens.Issue(user);
+await sessions.StoreAsync(issued.Jti, user.Id, issued.ExpiresAt - DateTimeOffset.UtcNow, ct);
+
+// AuthServiceExtensions — imza geçerli olsa bile oturum kaydı şart
+OnTokenValidated = async ctx =&gt;
 {
-    context.Response.StatusCode = StatusCodes.Status400BadRequest;
-    return;
+    var jti = ctx.Principal?.FindFirst("jti")?.Value;
+    if (string.IsNullOrEmpty(jti) || !await store.IsActiveAsync(jti, ct))
+        ctx.Fail("Session is not active.");
+}</code></pre>
+<div class="callout warn"><strong>Oturum kaydı için fail-closed</strong>Redis'e ulaşılamazsa gateway token'ı <em>kabul etmez</em> (401) ve login 503 döner. Burada fail-open seçmek, Redis kesintisinde logout'u ve iptal edilmiş token'ları bypass ederdi. Bu bilinçli bir güvenlik/erişilebilirlik takasıdır; Redis'in yüksek erişilebilirliği (replica/failover) bu yüzden önemlidir.</div>
+<div class="callout risk"><strong>Kapsam sınırı</strong>Oturum kontrolü gateway'dedir. Order/Inventory servisleri JWT'yi kendi imza anahtarıyla bağımsız doğrular ve Redis'e bakmaz; yani gateway'i atlayıp servise doğrudan giden bir istek, logout sonrası da token süresi dolana kadar kabul edilebilir. Servislerin ağdan yalnızca gateway'e açık olması bu varsayımın parçasıdır. Servis tarafında da iptal gerekiyorsa aynı <code>ITokenSessionStore</code> mantığı oraya taşınmalıdır.</div>
+<div class="callout warn"><strong>Eviction ve oturum kaybı</strong><code>docker-compose.yml</code> Redis'i <code>--maxmemory 512mb --maxmemory-policy allkeys-lru</code> ile başlatır. Bellek dolarsa <code>allkeys-lru</code> oturum anahtarlarını da silebilir ve kullanıcılar beklenmedik şekilde çıkış yapmış olur. Eğitimde sorun olmaz; üretimde oturumları ayrı bir Redis'e alın veya yalnızca TTL'li anahtarları silen <code>volatile-lru</code> kullanın ve memory/eviction alarmı kurun.</div></section>
+
+<section id="orders"><h2>Order servisi: liste cache'i ve create'te invalidation</h2><p>Sipariş listesi sık okunur, nadiren değişir; bu yüzden <a href="../src/Services/Order/Order.Api/Data/OrderService.cs">OrderService</a> cache-aside uygular. Cache arayüzü <a href="../src/Services/Order/Order.Api/Caching/OrderListCache.cs">IOrderListCache</a> (Redis uygulaması <code>RedisOrderListCache</code>) üç işlem sunar: <code>GetAsync</code>, <code>SetAsync</code>, <code>InvalidateAsync</code>. Anahtar kullanıcı bazlıdır: <code>orders:user:{userId}:list</code>; <code>userId</code> daima JWT'den gelir, istek gövdesinden değil.</p>
+<table><thead><tr><th>Endpoint</th><th>Redis davranışı</th></tr></thead><tbody>
+<tr><td><code>GET /orders</code> (<code>ListAsync</code>)</td><td>Önce <code>GET</code>. <strong>Hit</strong> ise Redis'teki liste döner, DB'ye gidilmez. <strong>Miss</strong> ise DB'den son 100 sipariş okunur, <code>SET ... EX 60</code> ile cache'e yazılır.</td></tr>
+<tr><td><code>POST /orders</code> (<code>CreateAsync</code>)</td><td>Sipariş kaydedilince <code>DEL orders:user:{userId}:list</code>. Durum değişimi (Confirmed/Rejected) kaydedildikten sonra <code>finally</code> bloğunda bir kez daha silinir.</td></tr>
+<tr><td><code>GET /orders/{id}</code> (<code>GetAsync</code>)</td><td>Cache kullanmaz; <code>userId</code> filtresiyle doğrudan DB'den okur.</td></tr>
+</tbody></table>
+<pre><code>// OrderService.ListAsync — cache-aside
+var cached = await cache.GetAsync(userId, ct);
+if (cached is not null) return cached;               // HIT
+
+var orders = await db.Orders.AsNoTracking().Include(o =&gt; o.Items)
+    .Where(o =&gt; o.UserId == userId)
+    .OrderByDescending(o =&gt; o.CreatedAt).Take(MaxListSize).ToListAsync(ct);
+var dtos = orders.Select(OrderDto.From).ToList();
+await cache.SetAsync(userId, dtos, ct);              // MISS → SET + TTL
+return dtos;
+
+// OrderService.CreateAsync — yazma sonrası invalidate
+db.Orders.Add(order);
+await db.SaveChangesAsync(ct);
+await cache.InvalidateAsync(userId, ct);             // Pending kaydı görünsün
+...
+finally { await cache.InvalidateAsync(userId, CancellationToken.None); }  // nihai durum</code></pre>
+<div class="callout tip"><strong>Neden iki kez invalidate?</strong>Sipariş önce <code>Pending</code> olarak yazılır, sonra Inventory cevabıyla <code>Confirmed</code>/<code>Rejected</code> olur. İlk silme ile ikinci kayıt arasında başka bir <code>GET /orders</code> listeyi <code>Pending</code> hâliyle cache'e yazmış olabilir; son silme bu eski görüntüyü temizler. İptal edilmiş istekte bile silinsin diye <code>CancellationToken.None</code> kullanılır.</div>
+<p>Cache hatası isteği düşürmemelidir: <code>RedisOrderListCache</code> Redis veya JSON hatasını loglar, <code>Get</code> için <code>null</code> (miss) döner, <code>Set</code>/<code>Invalidate</code> hatasını yutar. Invalidate başarısız olursa bayat liste en fazla <code>OrderListTtlSeconds</code> (60 sn) yaşar; bu üst sınır TTL'in asıl işidir. TTL'i <code>appsettings</code> içindeki <code>Cache:OrderListTtlSeconds</code> ile değiştirebilirsiniz.</p></section>
+
+<section id="repo"><h2>Ortak cache davranışı ve kota sayacı</h2><p><a href="../src/BuildingBlocks/Shared.Kernel/Caching/CacheAsideBehavior.cs">CacheAsideBehavior</a>, <code>IDistributedCache</code> ile CQRS query response'larını cache'ler; Medallion distributed lock ile miss anında tek-yükleme (single-flight) dener, lock alınamazsa kısa bekleyip fallback yükleme yapar. Lock provider hata verirse warning ile degrade etmesi availability-first bir karardır; stampede güvenlik ağı garanti olmaktan çıkar, bu yüzden backend yük alarmı gerekir. JSON serialization hatasında kayıt evict edilir.</p><p><a href="../src/Gateway/ApiGateway/Middleware/LlmTokenBudgetMiddleware.cs">RedisTenantQuotaStore</a>, gateway replikaları arasında günlük tenant token kullanımını sayar. Redis <code>INCR</code> atomiktir; ancak “önce <code>GET remaining</code>, sonra modele çağrı, kullanımı sonradan düş” akışı eşzamanlı rezervasyon yarışı doğurur: birden çok istek aynı kalan bütçeyi görebilir. Sert maliyet limiti için atomic reservation (Lua script/transaction) ve sağlayıcının bildirdiği gerçek token kullanımı gerekir; chars/4 tahmini mutabakat değildir.</p></section>
+
+<section id="invalidation"><h2>Invalidation ve cache tutarlılığı</h2><p>İki invalidation yaklaşımı vardır. Order servisi <strong>doğrudan silme</strong> kullanır: yazan kod aynı serviste olduğu için sade ve güvenilirdir. Inventory ise <a href="../src/Services/Inventory/Inventory.Application/Events/InventoryDomainEvents.cs">InventoryReservedDomainEvent</a> ile tam SKU anahtarı ve pattern anahtarlarını bildirir. Redis Pub/Sub volatile'dır: çevrimdışı subscriber mesajı kaçırır; pattern scan yüksek key cardinality'de pahalıdır. Kalıcı invalidation gerekiyorsa Outbox event'i, versiyonlu anahtar veya CDC ile tekrar oynatılabilir bir mekanizma düşünün.</p><p>DB yazması ile cache silme iki ayrı işlemdir (dual-write): silme başarısız olursa veri güncel ama cache eski kalır. “Stale kabul edilebilir” kararını ve süresini (TTL) domain ve kullanıcı beklentisiyle yazılı hâle getirin.</p></section>
+
+<section id="failure"><h2>Redis erişilemezse: üç farklı politika</h2><p>Tek bir hata politikası her anahtara uymaz. Karar, “bu veri doğruluğu mu hızı mı temsil ediyor?” sorusundan çıkar.</p>
+<table><thead><tr><th>Kullanım</th><th>Politika</th><th>Gerekçe</th></tr></thead><tbody>
+<tr><td>Sipariş listesi cache'i</td><td>Fail-open</td><td>Cache yalnız hızlandırıcıdır; DB'ye düşmek doğru sonuç verir (yük artar).</td></tr>
+<tr><td>JWT oturum kaydı</td><td>Fail-closed</td><td>Kayıt güvenlik kararıdır; doğrulanamayan oturum kabul edilmez.</td></tr>
+<tr><td>LLM kotası</td><td>Maliyete göre seçilir</td><td>Fail-open limiti aşırabilir; fail-closed AI'ı durdurur.</td></tr>
+</tbody></table>
+<p>Redis memory max, eviction policy, persistence (AOF), replication, TLS/auth, backup/restore ve multi-AZ failover ayrı operasyon konularıdır. Yerel ortamda <code>appendonly yes</code> ve <code>allkeys-lru</code> ayarları <a href="../docker-compose.yml">docker-compose.yml</a> içindedir.</p></section>
+
+<section id="security"><h2>Güvenlik ve gözlemleme</h2><ul><li><strong>Anahtar kapsamı:</strong> kullanıcıya özel cache anahtarı <code>userId</code> içerir; cache'ten dönen veri başka kullanıcıya sızamaz.</li><li><strong>Oturum anahtarı:</strong> <code>jti</code> tahmin edilemez (<code>Guid</code>) ve değer olarak yalnız <code>userId</code> saklanır; token'ın kendisi Redis'e yazılmaz.</li><li><strong>Veri minimizasyonu:</strong> cache'e PII ve gizli bilgi yazmayın; yazıyorsanız kısa TTL ve erişim kontrolü uygulayın.</li><li><strong>İzleme:</strong> hit/miss, Redis hata logları, <code>evicted_keys</code>, bellek kullanımı, login/logout oranı ve 401 artışı.</li></ul></section>
+
+<section id="test"><h2>Doğrulama planı (<code>redis-cli</code> ile)</h2><p>Aşağıdaki komutlar compose'taki Redis konteynerinde çalışır: <code>docker exec -it elp-redis redis-cli</code>.</p>
+<ol><li><strong>Login:</strong> <code>POST /api/auth/login</code> sonrası <code>--scan --pattern 'auth:session:*'</code> bir anahtar göstermeli; <code>TTL auth:session:&lt;jti&gt;</code> yaklaşık <code>36000</code> saniye (600 dk) olmalı.</li><li><strong>Doğrulama:</strong> aynı cookie ile <code>GET /api/auth/me</code> 200 dönmeli.</li><li><strong>Logout:</strong> <code>POST /api/auth/logout</code> sonrası <code>EXISTS auth:session:&lt;jti&gt;</code> <code>0</code> olmalı; aynı token ile <code>/api/auth/me</code> artık <code>401</code> dönmeli.</li><li><strong>Liste cache'i:</strong> <code>GET /api/orders</code> iki kez çağrılınca <code>orders:user:&lt;userId&gt;:list</code> oluşmalı (<code>TTL</code> ≤ 60); ikinci çağrı DB'ye gitmemeli (Debug log: cache hit/miss).</li><li><strong>Invalidation:</strong> <code>POST /api/orders</code> sonrası <code>EXISTS orders:user:&lt;userId&gt;:list</code> <code>0</code> olmalı; sonraki <code>GET</code> yeni siparişi içermeli.</li><li><strong>Redis kesintisi:</strong> <code>docker stop elp-redis</code> ile sipariş listesi hâlâ cevap vermeli (fail-open), korumalı gateway istekleri ise 401 dönmeli (fail-closed).</li><li><strong>Kullanıcı izolasyonu:</strong> iki kullanıcıyla liste çağırın; anahtarlar ayrı olmalı, veri karışmamalı.</li></ol></section>
+
+<section id="walkthrough"><h2>Kod yürüyüşü: aynı Redis, üç farklı sözleşme</h2><p>Sırayla şu dosyaları açıp farkı gösterin: <a href="../src/Gateway/ApiGateway/Auth/TokenSessionStore.cs">TokenSessionStore</a> (güvenlik kaydı, fail-closed), <a href="../src/Services/Order/Order.Api/Caching/OrderListCache.cs">OrderListCache</a> (okuma hızlandırıcı, fail-open) ve <a href="../src/Gateway/ApiGateway/Middleware/LlmTokenBudgetMiddleware.cs">LlmTokenBudgetMiddleware</a> (sayaç, maliyet kontrolü). Üçü de <code>IConnectionMultiplexer</code> kullanır; fark Redis çağrısında değil, hata yakalamada ve TTL seçimindedir.</p>
+<pre><code>// Fail-open (OrderListCache): hata → miss, istek devam eder
+catch (Exception ex) when (ex is RedisException or JsonException)
+{
+    logger.LogWarning(ex, "Order list cache read failed for user {UserId}", userId);
+    return null;
 }
-var remaining = await quotas.GetRemainingAsync(tenant, context.RequestAborted);
-if (remaining &lt;= 0)
+
+// Fail-closed (AuthServiceExtensions): hata → token reddedilir
+catch (RedisException ex)
 {
-    context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-    return;
+    logger.LogError(ex, "Redis session check failed; rejecting token.");
+    ctx.Fail("Session store unavailable.");
 }
-var originalBody = context.Response.Body;
-var counter = new TokenCountStream(originalBody);
-context.Response.Body = counter;
-try
-{
-    await next(context);
-}
-finally
-{
-    context.Response.Body = originalBody;
-    await quotas.RecordUsageAsync(tenant, counter.TokensWritten, context.RequestAborted);
-}</code></pre><p>Query cache miss'te distributed lock tek-yükleme mekanizması sağlar; lock alınamazsa davranışın DB'ye kaç eşzamanlı fallback üreteceği yük testinde ölçülmeli. Invalidation yalnız local memory'den değil, tüm replika/cache katmanlarından tutarlı biçimde ele alınmalıdır. Cache key tenant/authorization kapsamını içermeli ise mevcut Inventory demo query'deki SKU-only key'i production öncesi genişletin.</p><p>Quota örneğinde read-check ile sonradan INCR arasında yarış vardır: eşzamanlı çağrılar aynı kalan miktarı okuyup bütçeyi aşabilir; usage tahmini de chars/4 olup provider billing usage değildir. [Cache behavior](../src/BuildingBlocks/Shared.Kernel/Caching/CacheAsideBehavior.cs), [query contract](../src/Services/Inventory/Inventory.Application/Queries/GetInventoryAvailabilityQuery.cs) ve [AI quota middleware/store](../src/Gateway/ApiGateway/Middleware/LlmTokenBudgetMiddleware.cs) açılıp farkları gösterin.</p><div class="callout warn"><strong>İki ayrı availability kararı</strong>Read cache Redis'ten geçici olarak vazgeçip origin'e gidebilir; kota Redis'i fail-open davranırsa maliyet limiti bypass olur. Üretim quota'sında tek atomik reserve/check (ör. Lua script veya transaction), idempotent usage record, provider gerçek token usage mutabakatı, key TTL ve alarm gerekir.</div></section>
-<section id="teacher"><h2>Tartışma</h2><p class="trainer">İki replika üzerinde local memory quota ile Redis quota'yı karşılaştırın. Sonra aynı anda iki isteğin “kalan son token”ı almasına izin verip atomic reservation tasarımını katılımcılara düşündürün. Cache'in hangi durumda yalnızca hızlandırıcı, hangi durumda iş doğruluğu bileşeni olduğunu netleştirin.</p><ul><li>Cache write fail olunca DB okuması başarılıysa kullanıcıya 503 dönmek doğru mu?</li><li>Invalidation event'i kaçıran replica'da stale veri ne kadar süre kabul edilebilir?</li><li>Redis key'e tenant claim eklemek yeterli mi; tenant ID'nin kaynağına ne kadar güveniyorsunuz?</li></ul></section>
-<section id="refs"><h2>Proje karşılığı ve kaynaklar</h2><ul><li><a href="../src/BuildingBlocks/Shared.Kernel/Caching/CacheAsideBehavior.cs">Distributed cache + single-flight</a>.</li><li><a href="../src/BuildingBlocks/Shared.Kernel/Caching/CacheInvalidationHandler.cs">Invalidation handler</a>.</li><li><a href="../src/Gateway/ApiGateway/Middleware/LlmTokenBudgetMiddleware.cs">Redis tenant budget middleware</a>.</li><li><a href="../docker-compose.yml">Redis local config</a> — persistence, maxmemory ve eviction policy.</li><li><a href="https://learn.microsoft.com/aspnet/core/performance/caching/distributed">ASP.NET Core distributed caching</a></li></ul></section>
-<nav class="pager"><a href="12-efcore-veritabani.html">← Önceki: EF Core</a><a href="14-observability-logging-tracing.html">Sonraki: Logging ve tracing →</a></nav></article><aside class="side"><h2>Bu oturum</h2><ol><li><a href="#plan">Akış</a></li><li><a href="#pattern">Cache modeli</a></li><li><a href="#repo">Repo</a></li><li><a href="#invalidation">Invalidation</a></li><li><a href="#test">Test senaryoları</a></li><li><a href="#walkthrough">Kod yürüyüşü</a></li><li><a href="#teacher">Tartışma</a></li></ol></aside></main>
-<footer>İlgili oturumlar: CQRS (05), EF Core (12), distributed state (10), LLM cost control (17, 20).</footer></body></html>
+
+// Query cache: key + 30 saniyelik freshness penceresi
+public string CacheKey =&gt; $"inventory:availability:{Sku}";
+public TimeSpan? AbsoluteExpiration =&gt; TimeSpan.FromSeconds(30);</code></pre>
+<p>Query cache anahtarı yalnız SKU içerir; veri kullanıcıya özel değilse sorun değildir, ancak yetkiye göre değişen bir sonuç için production öncesi tenant/rol boyutu eklenmelidir. Kota akışında read-check ile sonradan <code>INCR</code> arasındaki yarışı da ayrıca gösterin.</p>
+<div class="callout warn"><strong>Üç ayrı availability kararı</strong>Read cache Redis'ten geçici olarak vazgeçip origin'e gidebilir; oturum kaydı vazgeçemez; kota Redis'i fail-open davranırsa maliyet limiti bypass olur. “Redis down” tek bir senaryo değil, her kullanım için ayrı tasarlanmış bir davranıştır.</div></section>
+
+<section id="teacher"><h2>Tartışma</h2><p class="trainer">Redis'i <code>docker stop elp-redis</code> ile durdurup üç davranışı canlı gözlemleyin: sipariş listesi çalışmaya devam eder, korumalı gateway istekleri 401 döner, kota davranışı koda göre değişir. Sonra “cache ne zaman yalnız hızlandırıcıdır, ne zaman doğruluk/güvenlik bileşenidir?” sorusunu katılımcılara tartıştırın.</p><ul><li>Oturum kaydı için fail-open seçilseydi logout ve iptal ne anlama gelirdi?</li><li>Order servisi de oturum kaydını kontrol etmeli mi; bunun maliyeti ve kazancı nedir?</li><li>İlk invalidate ile ikinci invalidate arasındaki yarışta liste ne kadar süre bayat kalabilir?</li><li><code>allkeys-lru</code> bellek baskısında kullanıcıları neden çıkış yapmış gibi gösterebilir?</li><li>Cache yazma başarısız olunca DB okuması başarılıysa kullanıcıya 503 dönmek doğru mu?</li></ul></section>
+
+<section id="refs"><h2>Proje karşılığı ve kaynaklar</h2><ul><li><a href="../src/Gateway/ApiGateway/Auth/TokenSessionStore.cs">JWT oturum kaydı (Redis)</a> ve <a href="../src/Gateway/ApiGateway/Auth/AuthEndpoints.cs">login/logout endpoint'leri</a>.</li><li><a href="../src/Gateway/ApiGateway/Auth/AuthServiceExtensions.cs">Her istekte oturum doğrulama (OnTokenValidated)</a>.</li><li><a href="../src/Services/Order/Order.Api/Caching/OrderListCache.cs">Sipariş listesi cache'i</a> ve <a href="../src/Services/Order/Order.Api/Data/OrderService.cs">OrderService (cache-aside + invalidation)</a>.</li><li><a href="../src/Services/Order/Order.Api/Endpoints/OrderEndpoints.cs">OrderEndpoints</a> — <code>CreateAsync</code> / <code>ListAsync</code>.</li><li><a href="../src/BuildingBlocks/Shared.Kernel/Caching/CacheAsideBehavior.cs">Distributed cache + single-flight</a> ve <a href="../src/BuildingBlocks/Shared.Kernel/Caching/CacheInvalidationHandler.cs">invalidation handler</a>.</li><li><a href="../src/Gateway/ApiGateway/Middleware/LlmTokenBudgetMiddleware.cs">Redis tenant budget middleware</a>.</li><li><a href="../docker-compose.yml">Redis local config</a> — persistence, maxmemory ve eviction policy.</li><li><a href="https://learn.microsoft.com/aspnet/core/performance/caching/distributed">ASP.NET Core distributed caching</a></li><li><a href="https://redis.io/docs/latest/develop/reference/eviction/">Redis eviction policies</a></li></ul></section>
+<nav class="pager"><a href="12-efcore-veritabani.html">← Önceki: EF Core</a><a href="14-observability-logging-tracing.html">Sonraki: Logging ve tracing →</a></nav></article><aside class="side"><h2>Bu oturum</h2><ol><li><a href="#plan">Akış</a></li><li><a href="#map">Redis haritası</a></li><li><a href="#pattern">Cache modeli</a></li><li><a href="#session">JWT oturumu</a></li><li><a href="#orders">Sipariş cache'i</a></li><li><a href="#repo">Ortak cache / kota</a></li><li><a href="#invalidation">Invalidation</a></li><li><a href="#failure">Failure policy</a></li><li><a href="#security">Güvenlik</a></li><li><a href="#test">Test senaryoları</a></li><li><a href="#walkthrough">Kod yürüyüşü</a></li><li><a href="#teacher">Tartışma</a></li></ol></aside></main>
+<footer>İlgili oturumlar: CQRS (05), EF Core (12), distributed state (10), güvenlik/JWT, LLM cost control (17, 20).</footer></body></html>

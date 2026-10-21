@@ -35,8 +35,10 @@ public static class ObservabilityExtensions
                 // Oran %10; ParentBased → upstream (gateway) kararı korunur, aksi halde
                 // dağıtık trace'ler zincirde kopar. Hatalı/yavaş trace'ler için
                 // collector'daki tail_sampling devreye girer (Lab 6).
+                // Oran: OTEL_TRACES_SAMPLER_ARG (0-1) ile değişir. Varsayılan Development'ta 1.0
+                // (Postman'deki her traceId Jaeger'da bulunsun), diğer ortamlarda 0.10.
                 tracing
-                    .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(0.10)))
+                    .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(ResolveSamplingRatio())))
                     .AddSource(ObservabilityNames.TelemetryPipeline.Name)
                     .AddSource(ObservabilityNames.AiPipeline.Name)
                     // Gün 2'den kalan elle tanımlanmış source'lar (kaldırılınca span kaybolur!)
@@ -45,11 +47,12 @@ public static class ObservabilityExtensions
                     .AddSource("Telemetry.Storage")
                     .AddSource("BuildingBlocks.Caching")
                     .AddSource("BuildingBlocks.CacheInvalidation")
-                    .AddHttpClientInstrumentation();
+                    .AddHttpClientInstrumentation(o => o.RecordException = true);
 
                 if (includeAspNetCoreInstrumentation)
                 {
-                    tracing.AddAspNetCoreInstrumentation();
+                    // Yakalanmamış exception'ı span'e "exception" event'i (type/message/stacktrace) olarak ekler.
+                    tracing.AddAspNetCoreInstrumentation(o => o.RecordException = true);
                 }
 
                 tracing.AddOtlpExporter();
@@ -71,5 +74,16 @@ public static class ObservabilityExtensions
             });
 
         return services;
+    }
+
+    private static double ResolveSamplingRatio()
+    {
+        var raw = Environment.GetEnvironmentVariable("OTEL_TRACES_SAMPLER_ARG");
+        if (double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var ratio)
+            && ratio is >= 0 and <= 1)
+            return ratio;
+
+        var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        return string.Equals(env, "Development", StringComparison.OrdinalIgnoreCase) ? 1.0 : 0.10;
     }
 }

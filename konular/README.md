@@ -24,7 +24,7 @@ Tüm sayfalar açık renk tema kullanır. `egitim.css` yerel ve haricî runtime 
 | 10 | [10-dagitik-dayaniklilik.html](./10-dagitik-dayaniklilik.html) | Timeout, retry, circuit breaker, bulkhead, dağıtık işlem yönetimi | gRPC ve MassTransit retry; tam circuit-breaker yok |
 | 11 | [11-dotnet-performans-memory-async.html](./11-dotnet-performans-memory-async.html) | Memory/GC, Span/Memory, async/await, Channel, ArrayPool | Kafka telemetry consumer/processor |
 | 12 | [12-efcore-veritabani.html](./12-efcore-veritabani.html) | EF Core 10 query/transaction/concurrency/migration optimizasyonu | OutboxDbContext, Npgsql telemetry store |
-| 13 | [13-redis-caching.html](./13-redis-caching.html) | Cache-aside, Redis, invalidation, stampede, quota | Shared cache behavior, Redis gateway quota |
+| 13 | [13-redis-caching.html](./13-redis-caching.html) | Redis: JWT oturum kaydı, cache-aside, invalidation, stampede, quota, failure policy | Gateway oturum kaydı, Order liste cache'i, Shared cache behavior, Redis gateway quota |
 | 14 | [14-observability-logging-tracing.html](./14-observability-logging-tracing.html) | Structured logging, Serilog, Graylog, Sentry, OpenTelemetry tracing | Shared.Observability, Collector, Jaeger/Graylog compose |
 | 15 | [15-metrik-slo-aspire.html](./15-metrik-slo-aspire.html) | Metrics, health checks, SLI/SLO, error budget, .NET Aspire | Prometheus/Grafana/OTel; Aspire AppHost yok |
 | 16 | [16-profiling-benchmark-yuk-testi.html](./16-profiling-benchmark-yuk-testi.html) | Profiling, BenchmarkDotNet, load/stress/spike/soak testing | Telemetry ölçüm noktaları; benchmark/test projesi yok |

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using StackExchange.Redis;
 
 namespace EvolutionaryLogistics.Gateway.Auth;
 
@@ -75,11 +76,14 @@ public static class AuthEndpoints
         AuthDbContext db,
         IPasswordHasher<AppUser> hasher,
         JwtTokenService tokens,
+        ITokenSessionStore sessions,
         IOptions<JwtOptions> jwtOptions,
         IHostEnvironment env,
         HttpContext http,
         CancellationToken ct)
     {
+        int i = 0;
+        int ii = 1 / i;
         if (RequireSecureTransport(http, env) is { } insecure) return insecure;
 
         var errors = new Dictionary<string, string[]>();
@@ -102,6 +106,15 @@ public static class AuthEndpoints
         }
 
         var issued = tokens.Issue(user);
+        try
+        {
+            // Oturum Redis'e token ömrü kadar TTL ile yazılır; sonraki her istekte buradan doğrulanır.
+            await sessions.StoreAsync(issued.Jti, user.Id, issued.ExpiresAt - DateTimeOffset.UtcNow, ct);
+        }
+        catch (RedisException)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Session store unavailable.");
+        }
         var options = jwtOptions.Value;
         var secure = !env.IsDevelopment() || http.Request.IsHttps;
         var sameSite = Enum.Parse<SameSiteMode>(options.CookieSameSite, true);
@@ -130,8 +143,19 @@ public static class AuthEndpoints
         return Results.Ok(new LoginResponse(ToResponse(user), issued.ExpiresAt, issued.CsrfToken));
     }
 
-    private static IResult Logout(HttpContext http, IOptions<JwtOptions> jwtOptions, IHostEnvironment env)
+    private static async Task<IResult> Logout(
+        HttpContext http, ITokenSessionStore sessions, IOptions<JwtOptions> jwtOptions, IHostEnvironment env, CancellationToken ct)
     {
+        // Geçerli bir oturum varsa Redis kaydı silinir; token çalınmış olsa bile artık reddedilir.
+        if (http.User.FindFirst("jti")?.Value is { Length: > 0 } jti)
+        {
+            try { await sessions.RevokeAsync(jti, ct); }
+            catch (RedisException)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Session store unavailable.");
+            }
+        }
+
         var options = jwtOptions.Value;
         var secure = !env.IsDevelopment() || http.Request.IsHttps;
         var sameSite = Enum.Parse<SameSiteMode>(options.CookieSameSite, true);

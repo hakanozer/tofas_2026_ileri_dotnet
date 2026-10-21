@@ -44,8 +44,8 @@ if (!app.Environment.IsDevelopment())
 await app.MigrateAuthDatabaseAsync();
 
 app.UseSerilogRequestLogging();
+app.UseTraceIdResponse();
 app.UseAuthentication();
-app.UseMiddleware<CsrfProtectionMiddleware>();
 app.UseAuthorization();
 app.UseCorrelationAndClaimInjection();
 // ── Gün 2: Rate limiting proxy pipeline'a kaydedilir. GOTCHA: IReverseProxyFeature

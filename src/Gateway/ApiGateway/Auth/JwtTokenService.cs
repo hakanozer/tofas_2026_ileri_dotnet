@@ -37,7 +37,7 @@ public sealed class JwtOptions
     }
 }
 
-public sealed record IssuedToken(string Token, DateTimeOffset ExpiresAt, string CsrfToken);
+public sealed record IssuedToken(string Token, DateTimeOffset ExpiresAt, string CsrfToken, string Jti);
 
 public sealed class JwtTokenService(IOptions<JwtOptions> options)
 {
@@ -50,7 +50,10 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options)
         var expires = now.AddMinutes(_options.ExpiryMinutes);
         var csrf = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
 
+        var jti = Guid.NewGuid().ToString("N");
+
         var identity = new ClaimsIdentity();
+        identity.AddClaim(new Claim("jti", jti));
         identity.AddClaim(new Claim("sub", user.Id.ToString()));
         identity.AddClaim(new Claim("userId", user.Id.ToString()));
         identity.AddClaim(new Claim("email", user.Email));
@@ -71,6 +74,6 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options)
             SigningCredentials = new SigningCredentials(_options.CreateKey(), SecurityAlgorithms.HmacSha256)
         });
 
-        return new IssuedToken(token, expires, csrf);
+        return new IssuedToken(token, expires, csrf, jti);
     }
 }
