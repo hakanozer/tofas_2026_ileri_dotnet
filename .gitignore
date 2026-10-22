@@ -4,7 +4,6 @@ obj/
 .idea/
 *.user
 *.suo
-.env
 appsettings.Development.local.json
 **/logs/
 # dev-local.sh tarafından yarp.json'dan üretilir (Docker DNS -> localhost).
