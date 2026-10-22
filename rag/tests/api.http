@@ -1,0 +1,67 @@
+### Kök endpoint
+GET http://localhost:8000/
+
+### Sağlık kontrolü
+GET http://localhost:8000/api/v1/health
+
+###############################################################
+# RAG Pipeline (stateless — eski davranış, değişmedi)
+###############################################################
+
+### Ürün sorgusu (RAG)
+POST http://localhost:8000/api/v1/query
+Content-Type: application/json
+
+{
+  "query": "1000 tl altı spor ayakkabıları getir",
+  "max_results": 5
+}
+
+###############################################################
+# Agent API — Session tabanlı çok turlu konuşma
+# Akış: 1) session aç  2) query gönder (tekrar tekrar)  3) session sil
+###############################################################
+
+### ADIM 1 — Yeni oturum başlat (session_id alırsın)
+# @name startSession
+POST http://localhost:8000/api/v1/agent/session
+Content-Type: application/json
+
+### ADIM 2a — İlk soru (session_id'yi bir önceki yanıttan kopyala)
+POST http://localhost:8000/api/v1/agent/query
+Content-Type: application/json
+
+{
+  "session_id": "309e7aad-9638-4a6a-8cec-a9ebac29e3af",
+  "query": "1000 TL altı terletmeyen spor ayakkabı öner"
+}
+
+### ADIM 2b — İkinci soru (aynı session_id ile; agent önceki bağlamı hatırlar)
+POST http://localhost:8000/api/v1/agent/query
+Content-Type: application/json
+
+{
+  "session_id": "3fabf135-2f80-4a01-940d-2023f49eb3cf",
+  "query": "Nike ile Adidas spor ayakkabılarını karşılaştır"
+}
+
+### ADIM 2c — Üçüncü soru
+POST http://localhost:8000/api/v1/agent/query
+Content-Type: application/json
+
+{
+  "session_id": "3fabf135-2f80-4a01-940d-2023f49eb3cf",
+  "query": "Stokta olan yazlık koşu ayakkabısı var mı?"
+}
+
+### ADIM 2d — Dördüncü soru
+POST http://localhost:8000/api/v1/agent/query
+Content-Type: application/json
+
+{
+  "session_id": "3fabf135-2f80-4a01-940d-2023f49eb3cf",
+  "query": "Tüm sonuçları pdf olarak yazdır."
+}
+
+### ADIM 3 — Oturumu kapat / geçmişi temizle
+DELETE http://localhost:8000/api/v1/agent/session/22695fcd-aae4-4218-8487-aae01d348f67

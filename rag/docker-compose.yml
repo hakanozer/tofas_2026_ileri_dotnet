@@ -1,0 +1,159 @@
+services:
+  # FastAPI backend — uygulama logları buradan ELK'ye akar
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai_commerce_api
+    restart: unless-stopped
+    environment:
+      APP_ENV: development
+      DEBUG: "true"
+      LOG_LEVEL: INFO
+      DATABASE_URL: postgresql://aicommerce:changeme123@postgres:5432/aicommerce_db
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: llama3
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    profiles:
+      - app
+
+  # PostgreSQL veritabanı
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai_commerce_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aicommerce
+      POSTGRES_PASSWORD: changeme123
+      POSTGRES_DB: aicommerce_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aicommerce -d aicommerce_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # pgAdmin — Web tabanlı veritabanı yönetim arayüzü
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: ai_commerce_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@aicommerce.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+  # Qdrant vector database for embeddings
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ai_commerce_qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS http://localhost:6333/collections || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis — önbellekleme ve oturum yönetimi
+  redis:
+    image: redis:7-alpine
+    container_name: ai_commerce_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Elasticsearch — Log depolama
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: ai_commerce_elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.security.enrollment.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # Logstash — Log işleme ve Elasticsearch'e yazma
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.13.4
+    container_name: ai_commerce_logstash
+    restart: unless-stopped
+    ports:
+      - "5514:5000/tcp"
+    volumes:
+      - ./elk/logstash/pipeline:/usr/share/logstash/pipeline:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # Kibana — Görselleştirme
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.4
+    container_name: ai_commerce_kibana
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # Logspout — Docker container loglarını Logstash'e iletir
+  logspout:
+    image: gliderlabs/logspout:v3.2.14
+    container_name: ai_commerce_logspout
+    restart: unless-stopped
+    command: syslog+tcp://ai_commerce_logstash:5000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      logstash:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  qdrant_data:
+  redis_data:
+  elasticsearch_data:
