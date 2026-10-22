@@ -30,3 +30,31 @@ docker compose up -d --build api-gateway order-service inventory-service
 ## Paket notu (YARP)
 
 Müfredat **YARP 3.12.1** referans alır; NuGet.org’da en güncel karşılık **`Yarp.ReverseProxy` 2.3.0**’dır. `yarp.json` şeması eğitim boyunca aynı kalır; 3.x GA çıktığında yalnızca paket sürümü güncellenir.
+
+
+Yapılacaklar:
+docker compose up -d --build
+docker compose up -d postgres redis kafka rabbitmq otel-collector jaeger prometheus grafana
+dotnet run --project src/Gateway/ApiGateway/ApiGateway.csproj
+
+docker compose up -d --build order-service
+
+./scripts/dev-local.sh                  # hepsini başlat
+./scripts/dev-local.sh gateway order    # sadece seçilenler
+./scripts/dev-local.sh --no-build       # derlemeyi atla
+./scripts/dev-local.sh --keep-docker-apps
+
+python3 -m venv .venv
+source .venv/bin/activate
+uvicorn app.main:app --reload
+
+ollama run
+ollama run llama3
+
+alembic upgrade head
+python -m scripts.seed_database
+python -m app.rag.qdrant_store
+python -m scripts.build_index
+http://localhost:6333/dashboard
+
+
